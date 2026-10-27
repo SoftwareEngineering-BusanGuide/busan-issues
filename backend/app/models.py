@@ -1,11 +1,29 @@
 """SDD 5.2 테이블 정의."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.db import Base
+
+
+class UTCDateTime(TypeDecorator):
+    """UTC로 저장하고, 시간대를 저장하지 않는 SQLite에서 읽을 때도 UTC 시각으로 돌려준다."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(timezone.utc)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class Issue(Base):
@@ -26,7 +44,7 @@ class Issue(Base):
     lat: Mapped[float | None] = mapped_column(Numeric(9, 6, asdecimal=False))
     lng: Mapped[float | None] = mapped_column(Numeric(9, 6, asdecimal=False))
     # 마지막 기사 반영 시각 (FR-005)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
 
     articles: Mapped[list["Article"]] = relationship(back_populates="issue", order_by="Article.published_at")
 
@@ -43,6 +61,6 @@ class Article(Base):
     description: Mapped[str] = mapped_column(Text)
     # 같은 기사를 두 번 수집하지 않도록 원문 링크를 고유하게 둔다 (FR-008)
     url: Mapped[str] = mapped_column(String(1000), unique=True)
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    published_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
 
     issue: Mapped[Issue | None] = relationship(back_populates="articles")

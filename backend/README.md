@@ -31,6 +31,17 @@ uvicorn app.main:app --reload
 
 서버를 처음 시작하면 `issues`, `articles` 테이블이 자동으로 만들어집니다.
 
+### 데모 데이터
+
+뉴스 수집 파이프라인이 붙기 전까지는 데모 이슈 10개로 화면을 확인합니다. (실제 사건이 아니며, 기사 링크는 `example.com`입니다)
+
+```bash
+python -m app.seed           # DB가 비어 있을 때만 넣기
+python -m app.seed --reset   # 지우고 다시 넣기 (시각을 지금 기준으로 갱신)
+```
+
+재난문자(API-007)도 공공데이터 API 키를 받기 전까지는 데모 문자를 돌려줍니다. (`app/alerts.py`)
+
 ## 테스트
 
 ```bash
@@ -46,8 +57,16 @@ backend/
 │   ├── config.py      # 환경변수 설정
 │   ├── db.py          # DB 연결, 세션
 │   ├── models.py      # issues, articles 테이블 (SDD 5.2)
+│   ├── schemas.py     # API 응답 형식
+│   ├── constants.py   # 이슈 분류, 중요도, 기본 반경
+│   ├── geo.py         # 거리 계산
+│   ├── alerts.py      # 재난문자 제공자 (지금은 데모)
+│   ├── demo_data.py   # 데모 이슈·기사
+│   ├── seed.py        # python -m app.seed
 │   └── routers/       # API 엔드포인트 (SDD 6장)
-│       └── health.py  # API-001 GET /api/health
+│       ├── health.py  # API-001
+│       ├── issues.py  # API-002, 003, 004
+│       └── alerts.py  # API-007
 └── tests/
 ```
 
@@ -56,9 +75,9 @@ backend/
 | API ID | Endpoint | 상태 |
 |---|---|---|
 | API-001 | `GET /api/health` | ✅ |
-| API-002 | `GET /api/issues/nearby` | ⏳ |
-| API-003 | `GET /api/issues/top` | ⏳ |
-| API-004 | `GET /api/issues/{id}` | ⏳ |
+| API-002 | `GET /api/issues/nearby` | ✅ |
+| API-003 | `GET /api/issues/top` | ✅ |
+| API-004 | `GET /api/issues/{id}` | ✅ (기사 시간순 포함) |
 | API-005 | `GET /api/issues/{id}/timeline` | ⏳ |
 | API-006 | `POST /api/chat` | ⏳ |
-| API-007 | `GET /api/alerts` | ⏳ |
+| API-007 | `GET /api/alerts` | ✅ (데모 문자) |
