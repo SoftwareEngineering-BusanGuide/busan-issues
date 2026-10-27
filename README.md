@@ -120,6 +120,7 @@ cp .env.example .env
 
 - **Backend (FastAPI):** [`backend/README.md`](backend/README.md) 참고. `cd backend && python -m app.seed && uvicorn app.main:app --reload`
 - **Frontend (React):** [`frontend/README.md`](frontend/README.md) 참고. `cd frontend && npm install && npm run dev` → http://localhost:5173
+- **배포 (Vercel + Render):** [`docs/deployment.md`](docs/deployment.md) 참고.
 
 ```bash
 # 예시: 뉴스 파이프라인 샘플 실행
