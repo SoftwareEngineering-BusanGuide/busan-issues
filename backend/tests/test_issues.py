@@ -16,6 +16,7 @@ FIXTURE_ISSUES = [
     ("연산교차로 도로 포장 공사", "공사·생활", "normal", 35.1856, 129.0817, [300]),
     ("거제동 일부 단수 예정", "공사·생활", "normal", 35.1890, 129.0700, [480]),
     ("장소 미상 이슈", "행정", "normal", None, None, [60]),
+    ("열흘 전 서면 축제", "행사", "high", 35.1580, 129.0590, [60 * 24 * 10]),
 ]
 
 
@@ -92,3 +93,12 @@ def test_datetimes_include_timezone(seeded: TestClient):
 def test_issue_without_coordinates_is_not_nearby_but_can_be_listed(seeded: TestClient):
     wide = seeded.get("/api/issues/nearby", params={**CITY_HALL, "radius": 20}).json()
     assert "장소 미상 이슈" not in {i["title"] for i in wide}
+
+
+def test_period_filter_hides_older_issues_by_default(seeded: TestClient):
+    wide = {**CITY_HALL, "radius": 5}
+    assert "열흘 전 서면 축제" not in {i["title"] for i in seeded.get("/api/issues/nearby", params=wide).json()}  # 기본 7일
+    assert "열흘 전 서면 축제" in {i["title"] for i in seeded.get("/api/issues/nearby", params={**wide, "days": 30}).json()}
+    assert "열흘 전 서면 축제" not in {i["title"] for i in seeded.get("/api/issues/top").json()}
+    assert "열흘 전 서면 축제" in {i["title"] for i in seeded.get("/api/issues/top", params={"days": 30, "limit": 20}).json()}
+    assert seeded.get("/api/issues/top", params={"days": 31}).status_code == 422

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # 뉴스 수집 파이프라인 (FR-008 ~ FR-010). 네이버·Gemini 키가 모두 있을 때만 동작한다.
     pipeline_enabled: bool = True
     pipeline_interval_minutes: int = 30  # NFR-002: 게시 후 30분 안에 반영
+    news_max_age_days: int = 28  # 이 기간 안의 기사까지 모은다 (과거 이슈 포함)
+    pipeline_max_per_run: int = 300  # 한 번에 판별할 최대 기사 수 (Gemini 한도 보호). 나머지는 다음 실행에서
     gemini_model: str = "gemini-3.5-flash-lite"
 
     @property

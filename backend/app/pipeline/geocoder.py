@@ -10,6 +10,8 @@ from app.pipeline.naver import NaverSearchClient
 log = logging.getLogger(__name__)
 
 CITY_WIDE = {"부산", "부산시", "부산광역시", "부산전역", "부산일대", "부산지역"}
+# 장소 끝에 붙어 검색을 방해하는 말 (예: "동아대 승학캠퍼스 인근 도로")
+VAGUE_WORDS = {"인근", "일대", "주변", "앞", "부근", "근처", "도로", "일원", "앞바다", "해상"}
 
 
 def _in_busan(lat: float, lng: float) -> bool:
@@ -27,8 +29,24 @@ class Geocoder:
         if not place or place.replace(" ", "") in CITY_WIDE:
             return None
         if place not in self._cache:
-            self._cache[place] = self._search(place) or self._district_center(place)
+            self._cache[place] = self._search_progressively(place) or self._district_center(place)
         return self._cache[place]
+
+    def _search_progressively(self, place: str) -> tuple[float, float] | None:
+        """전체 장소명으로 못 찾으면 모호한 말을 빼고, 뒤에서부터 한 단어씩 줄여 다시 찾는다.
+        예: "사하구 동아대 승학캠퍼스 인근 도로" → "사하구 동아대 승학캠퍼스" → ..."""
+        words = [w for w in place.split() if w not in VAGUE_WORDS]
+        candidates = [place]
+        for end in range(len(words), 0, -1):
+            candidate = " ".join(words[:end])
+            # 구·군 이름만 남으면 검색 대신 구·군청 좌표를 쓴다
+            if candidate and candidate not in candidates and candidate.removeprefix("부산").strip() not in DISTRICT_CENTERS:
+                candidates.append(candidate)
+        for candidate in candidates[:4]:  # 지역 검색 호출 수 제한
+            coords = self._search(candidate)
+            if coords:
+                return coords
+        return None
 
     def _search(self, place: str) -> tuple[float, float] | None:
         query = place if place.startswith("부산") else f"부산 {place}"

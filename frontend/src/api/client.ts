@@ -12,11 +12,11 @@ async function getJson<T>(path: string, params?: Record<string, string | number 
 }
 
 /** API-002 내 주변 이슈 */
-export const fetchNearbyIssues = (lat: number, lng: number, radius: number, category?: string) =>
-  getJson<NearbyIssue[]>('/api/issues/nearby', { lat, lng, radius, category })
+export const fetchNearbyIssues = (lat: number, lng: number, radius: number, days: number, category?: string) =>
+  getJson<NearbyIssue[]>('/api/issues/nearby', { lat, lng, radius, days, category })
 
 /** API-003 부산 주요 이슈 */
-export const fetchTopIssues = () => getJson<IssueSummary[]>('/api/issues/top')
+export const fetchTopIssues = (days: number) => getJson<IssueSummary[]>('/api/issues/top', { days })
 
 /** API-004 이슈 상세 */
 export const fetchIssueDetail = (id: number) => getJson<IssueDetail>(`/api/issues/${id}`)

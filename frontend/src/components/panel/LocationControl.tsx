@@ -1,23 +1,27 @@
-import { DISTRICTS, RADIUS_OPTIONS_KM } from '../../lib/constants'
+import { DISTRICTS, PERIOD_OPTIONS, RADIUS_OPTIONS_KM } from '../../lib/constants'
 import type { UserLocation } from '../../types'
 
 interface LocationControlProps {
   location: UserLocation
   radiusKm: number
+  periodDays: number
   locating: boolean
   onUseMyLocation: () => void
   onSelectDistrict: (name: string) => void
   onRadiusChange: (km: number) => void
+  onPeriodChange: (days: number) => void
 }
 
 /** UI-05 위치 설정 (FR-001): 현재 위치(브라우저 권한) 또는 구·군 직접 선택 */
 export default function LocationControl({
   location,
   radiusKm,
+  periodDays,
   locating,
   onUseMyLocation,
   onSelectDistrict,
   onRadiusChange,
+  onPeriodChange,
 }: LocationControlProps) {
   const selectedDistrict = DISTRICTS.find((d) => d.name === location.label)?.name ?? ''
 
@@ -57,6 +61,18 @@ export default function LocationControl({
           {RADIUS_OPTIONS_KM.map((km) => (
             <option key={km} value={km}>
               반경 {km}km
+            </option>
+          ))}
+        </select>
+        <select
+          value={periodDays}
+          onChange={(e) => onPeriodChange(Number(e.target.value))}
+          aria-label="기간"
+          className="shrink-0 rounded-md border border-line bg-card px-2 py-1.5 text-xs"
+        >
+          {PERIOD_OPTIONS.map((p) => (
+            <option key={p.days} value={p.days}>
+              {p.label}
             </option>
           ))}
         </select>
