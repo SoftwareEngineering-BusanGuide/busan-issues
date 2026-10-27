@@ -118,6 +118,8 @@ cp .env.example .env
 
 > 각 모듈 구현 후 업데이트합니다.
 
+- **Backend (FastAPI):** [`backend/README.md`](backend/README.md) 참고. `cd backend && uvicorn app.main:app --reload`
+
 ```bash
 # 예시: 뉴스 파이프라인 샘플 실행
 cd data/news
