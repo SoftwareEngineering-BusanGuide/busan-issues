@@ -1,4 +1,4 @@
-import type { Alert, IssueDetail, IssueSummary, NearbyIssue } from '../types'
+import type { AirNow, Alert, IssueDetail, IssueSummary, NearbyIssue, WeatherNow } from '../types'
 
 async function getJson<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const query = new URLSearchParams()
@@ -23,3 +23,9 @@ export const fetchIssueDetail = (id: number) => getJson<IssueDetail>(`/api/issue
 
 /** API-007 재난문자·기상특보 */
 export const fetchAlerts = () => getJson<Alert[]>('/api/alerts')
+
+/** 기준 위치의 현재 날씨 (기상청) */
+export const fetchWeather = (lat: number, lng: number) => getJson<WeatherNow>('/api/weather', { lat, lng })
+
+/** 기준 위치에서 가장 가까운 측정소의 미세먼지 (에어코리아) */
+export const fetchAir = (lat: number, lng: number) => getJson<AirNow>('/api/air', { lat, lng })
