@@ -49,7 +49,11 @@ function createMarkerElement(issue: IssueSummary, onClick: () => void): HTMLElem
   el.className = `issue-marker${issue.importance === 'high' ? ' issue-marker--pulse' : ''}`
   const meta = categoryMeta(issue.category)
   el.style.setProperty('--marker-color', meta.color)
-  el.textContent = meta.icon
+  // 위치(transform)는 바깥 요소에 MapLibre가 주고, 모양과 확대 효과는 안쪽 요소가 맡는다
+  const dot = document.createElement('span')
+  dot.className = 'issue-marker__dot'
+  dot.textContent = meta.icon
+  el.append(dot)
   el.title = issue.title
   el.setAttribute('aria-label', issue.title)
   el.addEventListener('click', (e) => {
