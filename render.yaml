@@ -1,0 +1,27 @@
+# Render Blueprint: 백엔드(FastAPI) 배포 설정. 배포 순서는 docs/deployment.md 참고.
+# API 키는 이 파일에 넣지 않는다. 처음 Blueprint를 만들 때 Render 화면에서 입력한다 (sync: false).
+services:
+  - type: web
+    name: busan-alimi-api
+    runtime: python
+    plan: free
+    region: singapore # 한국과 가장 가까운 리전
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # 무료 플랜은 디스크가 유지되지 않아 재시작마다 SQLite가 비므로, 시작할 때 데모 이슈를 넣는다
+    startCommand: python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DATA_GO_KR_API_KEY # 기상청, 에어코리아
+        sync: false
+      - key: SAFETY_DATA_API_KEY # 긴급재난문자 (등록한 IP에서만 동작해 Render에서는 실패할 수 있음)
+        sync: false
+      - key: NCP_CLIENT_ID # NAVER API HUB (뉴스·지역 검색)
+        sync: false
+      - key: NCP_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
