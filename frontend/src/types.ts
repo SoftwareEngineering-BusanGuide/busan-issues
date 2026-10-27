@@ -31,10 +31,43 @@ export interface IssueDetail {
 
 export interface Alert {
   id: string
+  /** 수신 지역 표시 (예: 부산 북구). message는 원문 그대로다. */
   sender: string
   message: string
   issued_at: string
+  /** 비어 있으면 부산 전체 */
   districts: string[]
+  /** 안전안내 / 긴급재난 / 위급재난 */
+  level: string
+  /** 재난 유형 (예: 호우) */
+  hazard: string
+  source: string
+}
+
+export interface WeatherNow {
+  temperature: number | null
+  humidity: number | null
+  precipitation_1h: number | null
+  /** 없음 / 비 / 비/눈 / 눈 / 빗방울 ... */
+  precipitation_type: string
+  /** 맑음 / 구름많음 / 흐림 */
+  sky: string | null
+  wind_speed: number | null
+  observed_at: string
+  source: string
+}
+
+export type AirGrade = '좋음' | '보통' | '나쁨' | '매우나쁨'
+
+export interface AirNow {
+  station: string
+  distance_km: number
+  pm10: number | null
+  pm25: number | null
+  pm10_grade: AirGrade | null
+  pm25_grade: AirGrade | null
+  grade: AirGrade | null
+  measured_at: string
   source: string
 }
 

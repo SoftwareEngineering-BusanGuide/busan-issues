@@ -1,17 +1,52 @@
-import { formatDateTime } from '../../lib/format'
+import { AIR_GRADE_COLOR, weatherIcon } from '../../lib/constants'
+import { formatClock, formatDateTime } from '../../lib/format'
+import type { AirNow, WeatherNow } from '../../types'
 
-export default function TopBar({ now }: { now: number }) {
+interface TopBarProps {
+  now: number
+  weather: WeatherNow | null
+  air: AirNow | null
+}
+
+export default function TopBar({ now, weather, air }: TopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-      <span className="relative flex h-2.5 w-2.5">
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-75" />
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" />
       </span>
       <h1 className="text-base font-bold whitespace-nowrap">부산 알리미</h1>
-      <span className="rounded border border-caution/50 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-caution">
-        데모 데이터
+      {/* 재난문자·날씨·대기질은 실제 데이터, 이슈는 아직 데모 */}
+      <span
+        className="hidden rounded border border-caution/50 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-caution sm:inline"
+        title="재난문자·날씨·미세먼지는 실시간 데이터이고, 지도 이슈는 뉴스 수집을 연결하기 전까지 데모 데이터입니다."
+      >
+        이슈 데모
       </span>
-      <span className="ml-auto hidden text-sm whitespace-nowrap text-muted md:inline">{formatDateTime(new Date(now))}</span>
+
+      <div className="ml-auto flex items-center gap-4 text-sm">
+        {weather && weather.temperature != null && (
+          <span
+            className="whitespace-nowrap"
+            title={`습도 ${weather.humidity ?? '-'}% · 1시간 강수 ${weather.precipitation_1h ?? 0}mm · 풍속 ${weather.wind_speed ?? '-'}m/s\n${formatClock(weather.observed_at)} 관측 · ${weather.source}`}
+          >
+            {weatherIcon(weather.precipitation_type, weather.sky)} <strong>{Math.round(weather.temperature)}°C</strong>
+            <span className="ml-1 hidden text-muted sm:inline">
+              {weather.precipitation_type !== '없음' ? weather.precipitation_type : weather.sky}
+            </span>
+          </span>
+        )}
+        {air?.grade && (
+          <span
+            className="whitespace-nowrap"
+            title={`${air.station} 측정소 (${air.distance_km}km) · PM10 ${air.pm10 ?? '-'}㎍/㎥ (${air.pm10_grade ?? '-'}) · PM2.5 ${air.pm25 ?? '-'}㎍/㎥ (${air.pm25_grade ?? '-'})\n${formatClock(air.measured_at)} 측정 · ${air.source}`}
+          >
+            <span className="hidden text-muted sm:inline">미세먼지 </span>
+            <strong style={{ color: AIR_GRADE_COLOR[air.grade] }}>{air.grade}</strong>
+          </span>
+        )}
+        <span className="hidden whitespace-nowrap text-muted lg:inline">{formatDateTime(new Date(now))}</span>
+      </div>
     </header>
   )
 }

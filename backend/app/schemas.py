@@ -44,8 +44,44 @@ class IssueDetail(BaseModel):
 
 class AlertOut(BaseModel):
     id: str
+    # 화면에 붙일 수신 지역 표시 (예: 부산 북구). 문자 원문(message)은 바꾸지 않는다.
     sender: str
     message: str
     issued_at: datetime
+    # 수신 구·군. 비어 있으면 부산 전체
     districts: list[str]
+    # 안전안내 / 긴급재난 / 위급재난
+    level: str
+    # 재난 유형 (예: 호우, 태풍)
+    hazard: str
+    source: str
+
+
+class WeatherOut(BaseModel):
+    """기상청 초단기실황 + 초단기예보의 하늘 상태."""
+
+    temperature: float | None
+    humidity: float | None
+    precipitation_1h: float | None
+    # 강수 형태 (없음, 비, 비/눈, 눈, 빗방울 ...)
+    precipitation_type: str
+    # 맑음 / 구름많음 / 흐림. 예보를 못 받으면 None
+    sky: str | None
+    wind_speed: float | None
+    observed_at: datetime
+    source: str
+
+
+class AirOut(BaseModel):
+    """가장 가까운 에어코리아 측정소의 실시간 값."""
+
+    station: str
+    distance_km: float
+    pm10: int | None
+    pm25: int | None
+    pm10_grade: str | None
+    pm25_grade: str | None
+    # 둘 중 나쁜 등급 (좋음 / 보통 / 나쁨 / 매우나쁨)
+    grade: str | None
+    measured_at: datetime
     source: str

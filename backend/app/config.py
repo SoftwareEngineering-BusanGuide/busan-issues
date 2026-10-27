@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # 프론트엔드 개발 서버 주소 (쉼표로 여러 개)
     cors_origins: str = "http://localhost:5173"
 
+    # 외부 데이터 API 키. 비어 있으면 재난문자는 데모 문자를 쓰고, 날씨·대기질은 제공하지 않는다.
+    data_go_kr_api_key: str = ""  # 기상청 단기예보, 에어코리아 (공공데이터포털)
+    safety_data_api_key: str = ""  # 긴급재난문자 (재난안전데이터공유플랫폼, 등록한 IP에서만 호출 가능)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

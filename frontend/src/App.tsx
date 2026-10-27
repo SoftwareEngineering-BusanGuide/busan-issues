@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchAlerts, fetchIssueDetail, fetchNearbyIssues, fetchTopIssues } from './api/client'
+import { fetchAir, fetchAlerts, fetchIssueDetail, fetchNearbyIssues, fetchTopIssues, fetchWeather } from './api/client'
 import TopBar from './components/header/TopBar'
 import TopIssues from './components/header/TopIssues'
 import IssueMap from './components/map/IssueMap'
@@ -9,7 +9,7 @@ import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
 import { DEFAULT_LOCATION, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
 import { isInBusan } from './lib/geo'
-import type { Alert, IssueDetail, IssueSummary, NearbyIssue, UserLocation } from './types'
+import type { AirNow, Alert, IssueDetail, IssueSummary, NearbyIssue, UserLocation, WeatherNow } from './types'
 
 const SERVER_ERROR = '서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인하세요.'
 const REFRESH_MS = 60_000
@@ -41,6 +41,9 @@ export default function App() {
   const [nearbyResult, setNearbyResult] = useState<NearbyResult>({ key: '', data: [], error: null })
   const [topIssues, setTopIssues] = useState<IssueSummary[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [alertsError, setAlertsError] = useState(false)
+  const [weather, setWeather] = useState<WeatherNow | null>(null)
+  const [air, setAir] = useState<AirNow | null>(null)
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detailResult, setDetailResult] = useState<DetailResult | null>(null)
@@ -113,12 +116,30 @@ export default function App() {
       .then((data) => !ignore && setTopIssues(data))
       .catch(() => {})
     fetchAlerts()
-      .then((data) => !ignore && setAlerts(data))
-      .catch(() => {})
+      .then((data) => {
+        if (ignore) return
+        setAlerts(data)
+        setAlertsError(false)
+      })
+      .catch(() => !ignore && setAlertsError(true))
     return () => {
       ignore = true
     }
   }, [now])
+
+  // 기준 위치의 날씨·미세먼지 (서버가 10분 캐시하므로 1분마다 불러도 외부 API 호출은 늘지 않는다)
+  useEffect(() => {
+    let ignore = false
+    fetchWeather(location.lat, location.lng)
+      .then((data) => !ignore && setWeather(data))
+      .catch(() => !ignore && setWeather(null))
+    fetchAir(location.lat, location.lng)
+      .then((data) => !ignore && setAir(data))
+      .catch(() => !ignore && setAir(null))
+    return () => {
+      ignore = true
+    }
+  }, [location.lat, location.lng, now])
 
   // API-004 이슈 상세
   useEffect(() => {
@@ -145,7 +166,7 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col">
-      <TopBar now={now} />
+      <TopBar now={now} weather={weather} air={air} />
       <TopIssues issues={topIssues} now={now} selectedId={selectedId} onSelect={setSelectedId} />
 
       <main className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -189,7 +210,7 @@ export default function App() {
         </aside>
       </main>
 
-      <AlertTicker alerts={alerts} />
+      <AlertTicker alerts={alerts} error={alertsError} now={now} />
     </div>
   )
 }
