@@ -14,7 +14,6 @@ from app.schemas import AlertOut
 KST = timezone(timedelta(hours=9))
 SAFETY_DATA_URL = "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247"
 LIVE_SOURCE = "행정안전부 긴급재난문자 (재난안전데이터공유플랫폼, 공공누리 제4유형)"
-DEMO_SOURCE = "행정안전부 긴급재난문자 (데모 데이터)"
 
 
 class AlertProvider(Protocol):
@@ -92,24 +91,3 @@ def parse_alert(item: dict) -> AlertOut | None:
         hazard=str(item.get("DST_SE_NM") or ""),
         source=LIVE_SOURCE,
     )
-
-
-class DemoAlertProvider:
-    """API 키가 없는 개발 환경용. 실제 문자가 아니다."""
-
-    def list_alerts(self, district: str | None = None) -> list[AlertOut]:
-        now = datetime.now(timezone.utc)
-        demo = [
-            ("demo-1", ["사하구"], "안전안내", "기타", 180,
-             "하단동 낙동대로 인근 도로 침하로 차로 2개를 통제 중입니다. 차량은 우회하시고 보행자는 접근을 자제해 주시기 바랍니다."),
-            ("demo-2", ["수영구", "해운대구"], "안전안내", "강풍", 95,
-             "해운대구·수영구 강풍주의보 발효. 해안가 접근과 야외 활동을 자제해 주시기 바랍니다."),
-            ("demo-3", ["연제구"], "안전안내", "기타", 30,
-             "오늘 오후 연제구 중앙대로 일대 행사로 교통이 통제됩니다. 대중교통을 이용해 주시기 바랍니다."),
-        ]
-        alerts = [
-            AlertOut(id=i, sender=_region_label(d), message=msg, issued_at=now - timedelta(minutes=m),
-                     districts=d, level=level, hazard=hazard, source=DEMO_SOURCE)
-            for i, d, level, hazard, m, msg in demo
-        ]
-        return _filter_and_sort(alerts, district)

@@ -15,9 +15,21 @@ class Settings(BaseSettings):
     # 프론트엔드 개발 서버 주소 (쉼표로 여러 개)
     cors_origins: str = "http://localhost:5173"
 
-    # 외부 데이터 API 키. 비어 있으면 재난문자는 데모 문자를 쓰고, 날씨·대기질은 제공하지 않는다.
+    # 외부 데이터 API 키. 비어 있으면 해당 기능은 503을 돌려주고 화면에서 숨긴다.
     data_go_kr_api_key: str = ""  # 기상청 단기예보, 에어코리아 (공공데이터포털)
     safety_data_api_key: str = ""  # 긴급재난문자 (재난안전데이터공유플랫폼, 등록한 IP에서만 호출 가능)
+    ncp_client_id: str = ""  # NAVER API HUB: 뉴스 검색, 지역 검색
+    ncp_client_secret: str = ""
+    gemini_api_key: str = ""  # 기사 판별·분류·장소 추출·묶기·요약
+
+    # 뉴스 수집 파이프라인 (FR-008 ~ FR-010). 네이버·Gemini 키가 모두 있을 때만 동작한다.
+    pipeline_enabled: bool = True
+    pipeline_interval_minutes: int = 30  # NFR-002: 게시 후 30분 안에 반영
+    gemini_model: str = "gemini-3.5-flash-lite"
+
+    @property
+    def pipeline_ready(self) -> bool:
+        return self.pipeline_enabled and bool(self.ncp_client_id and self.ncp_client_secret and self.gemini_api_key)
 
     @property
     def cors_origin_list(self) -> list[str]:

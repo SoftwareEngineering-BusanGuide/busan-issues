@@ -31,14 +31,24 @@ uvicorn app.main:app --reload
 
 서버를 처음 시작하면 `issues`, `articles` 테이블이 자동으로 만들어집니다.
 
-### 데모 데이터
+### 뉴스 수집 파이프라인 (FR-008 ~ FR-010)
 
-뉴스 수집 파이프라인이 붙기 전까지는 데모 이슈 10개로 화면을 확인합니다. (실제 사건이 아니며, 기사 링크는 `example.com`입니다)
+`NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`, `GEMINI_API_KEY`가 있으면 서버가 시작될 때 한 번, 이후 30분마다 자동으로 돕니다.
+
+1. **수집:** NAVER API HUB 뉴스 검색으로 최근 24시간의 부산 기사를 모읍니다. 본문은 저장하지 않고 제목·검색 요약·원문 링크만 둡니다.
+2. **판별·분류:** Gemini가 기사 25건씩 부산 생활 이슈인지 판단하고, 분류·중요도·장소·한 줄 제목을 정합니다. (AI-REQ-01, 02)
+3. **같은 사건 묶기:** 최근 48시간 이슈와 비교해 같은 사건이면 붙이고, 아니면 새 이슈를 만듭니다. (FR-010)
+4. **장소 → 좌표:** 네이버 지역 검색으로 찾고, 못 찾으면 구·군청 좌표를 씁니다. "부산" 전체를 뜻하는 이슈는 지도에 찍지 않습니다.
+5. **상황 요약:** 기사가 2건 이상인 이슈는 기사 제목·요약만 근거로 현재 상황을 요약합니다. (AI-REQ-03)
+
+직접 한 번 돌리려면:
 
 ```bash
-python -m app.seed           # DB가 비어 있을 때만 넣기
-python -m app.seed --reset   # 지우고 다시 넣기 (시각을 지금 기준으로 갱신)
+python -m app.pipeline
 ```
+
+- 판별하지 못한 기사(LLM 오류·한도)는 `pending`으로 남아 다음 실행에서 다시 처리합니다.
+- 스키마가 바뀌면 개발용 SQLite 파일(`backend/busan_alimi.db`)을 지우고 다시 시작하세요. (아직 마이그레이션 도구가 없습니다)
 
 ### 실시간 데이터 (API 키)
 
@@ -46,11 +56,13 @@ python -m app.seed --reset   # 지우고 다시 넣기 (시각을 지금 기준�
 
 | 데이터 | 키 | 키가 없을 때 |
 |---|---|---|
-| 긴급재난문자 (재난안전데이터공유플랫폼) | `SAFETY_DATA_API_KEY` | 데모 문자 (출처에 "데모 데이터" 표시) |
+| 긴급재난문자 (재난안전데이터공유플랫폼) | `SAFETY_DATA_API_KEY` | `/api/alerts` 503 (화면에 "불러올 수 없음") |
 | 날씨 (기상청 단기예보) | `DATA_GO_KR_API_KEY` | `/api/weather` 503 (화면에서 숨김) |
 | 미세먼지 (에어코리아) | `DATA_GO_KR_API_KEY` | `/api/air` 503 (화면에서 숨김) |
+| 뉴스 이슈 (NAVER API HUB + Gemini) | `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`, `GEMINI_API_KEY` | 수집하지 않음 (지도가 비어 있음) |
 
-- 재난문자 키는 **등록한 IP에서만** 동작합니다. 다른 네트워크에서는 503이 나고, 화면에 "불러올 수 없음"이 표시됩니다. (키가 있는데 실패하면 데모 문자로 대신하지 않습니다)
+- 재난문자 키는 **등록한 IP에서만** 동작합니다. 다른 네트워크에서는 503이 나고, 화면에 "불러올 수 없음"이 표시됩니다.
+- 공공데이터 API는 키를 URL에 담으므로, 요청 URL을 남기는 `httpx` 로그는 꺼 두었습니다. 로그에 키가 찍히지 않게 이 설정을 유지하세요.
 - 외부 API 응답은 서버에서 캐시합니다 (재난문자 1분, 날씨·미세먼지 10분). 새로 받다 실패하면 마지막 성공 값을 씁니다.
 - 미세먼지는 기준 위치에서 가장 가까운 측정소 값입니다. 측정소 좌표는 `app/air.py`의 표(동 단위 근사값)를 씁니다.
 
@@ -73,11 +85,16 @@ backend/
 │   ├── constants.py   # 이슈 분류, 중요도, 기본 반경
 │   ├── geo.py         # 거리 계산
 │   ├── cache.py       # 외부 API 응답 캐시 (실패 시 마지막 값)
-│   ├── alerts.py      # 재난문자 (재난안전데이터공유플랫폼 / 데모)
+│   ├── alerts.py      # 재난문자 (재난안전데이터공유플랫폼)
 │   ├── weather.py     # 날씨 (기상청 초단기실황·예보, 격자 변환)
 │   ├── air.py         # 미세먼지 (에어코리아, 가까운 측정소)
-│   ├── demo_data.py   # 데모 이슈·기사
-│   ├── seed.py        # python -m app.seed
+│   ├── pipeline/      # 뉴스 수집 파이프라인 (python -m app.pipeline)
+│   │   ├── naver.py      # NAVER API HUB 뉴스·지역 검색
+│   │   ├── llm.py        # Gemini 호출 (JSON 응답, 재시도)
+│   │   ├── collector.py  # 1. 수집
+│   │   ├── analyzer.py   # 2·3. 판별·분류, 같은 사건 묶기, 요약 (프롬프트)
+│   │   ├── geocoder.py   # 4. 장소 → 좌표
+│   │   └── runner.py     # 실행 순서, 30분 스케줄러
 │   └── routers/       # API 엔드포인트 (SDD 6장)
 │       ├── health.py  # API-001
 │       ├── issues.py  # API-002, 003, 004
@@ -96,6 +113,6 @@ backend/
 | API-004 | `GET /api/issues/{id}` | ✅ (기사 시간순 포함) |
 | API-005 | `GET /api/issues/{id}/timeline` | ⏳ |
 | API-006 | `POST /api/chat` | ⏳ |
-| API-007 | `GET /api/alerts` | ✅ 실시간 (키 없으면 데모) |
+| API-007 | `GET /api/alerts` | ✅ 실시간 |
 | (추가) | `GET /api/weather?lat&lng` | ✅ 기상청 실시간 |
 | (추가) | `GET /api/air?lat&lng` | ✅ 에어코리아 실시간 |

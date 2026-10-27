@@ -1,16 +1,39 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.constants import IMPORTANCE_HIGH
-from app.seed import seed
+from app.models import Article, Issue
 
 CITY_HALL = {"lat": 35.1798, "lng": 129.0750}
+
+# (제목, 분류, 중요도, 위도, 경도, [기사 몇 분 전])
+FIXTURE_ISSUES = [
+    ("하단동 도로 싱크홀", "재난·안전", "high", 35.1066, 128.9668, [180, 120, 40]),
+    ("시청 앞 중앙대로 행사 교통 통제", "교통", "high", 35.1792, 129.0763, [90, 30]),
+    ("서면 상가 건물 화재", "사건·사고", "high", 35.1578, 129.0600, [70, 25]),
+    ("연산교차로 도로 포장 공사", "공사·생활", "normal", 35.1856, 129.0817, [300]),
+    ("거제동 일부 단수 예정", "공사·생활", "normal", 35.1890, 129.0700, [480]),
+    ("장소 미상 이슈", "행정", "normal", None, None, [60]),
+]
 
 
 @pytest.fixture
 def seeded(client: TestClient) -> TestClient:
+    now = datetime.now(timezone.utc)
+    n = 0
     with client.app.state.db.session_factory() as session:
-        seed(session)
+        for title, category, importance, lat, lng, minutes in FIXTURE_ISSUES:
+            issue = Issue(title=title, category=category, importance=importance, lat=lat, lng=lng,
+                          place_name=title, status_summary="요약" if len(minutes) > 1 else None,
+                          updated_at=now - timedelta(minutes=min(minutes)))
+            for m in minutes:
+                n += 1
+                issue.articles.append(Article(title=f"{title} 기사{n}", description="", url=f"https://news.test/{n}",
+                                              published_at=now - timedelta(minutes=m), triage="relevant"))
+            session.add(issue)
+        session.commit()
     return client
 
 
@@ -66,9 +89,6 @@ def test_datetimes_include_timezone(seeded: TestClient):
     assert updated_at.endswith("Z") or "+00:00" in updated_at
 
 
-def test_seed_is_idempotent_unless_reset(client: TestClient):
-    with client.app.state.db.session_factory() as session:
-        first = seed(session)
-        assert first > 0
-        assert seed(session) == 0
-        assert seed(session, reset=True) == first
+def test_issue_without_coordinates_is_not_nearby_but_can_be_listed(seeded: TestClient):
+    wide = seeded.get("/api/issues/nearby", params={**CITY_HALL, "radius": 20}).json()
+    assert "장소 미상 이슈" not in {i["title"] for i in wide}
