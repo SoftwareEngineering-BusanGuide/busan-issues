@@ -46,3 +46,14 @@ def test_endpoint(client: TestClient):
     assert client.get("/api/air", params={"lat": YEONSAN[0], "lng": YEONSAN[1]}).status_code == 503  # 값 없음
     client.app.state.air_provider = _provider([_reading("연산동", "25", "20")])
     assert client.get("/api/air", params={"lat": YEONSAN[0], "lng": YEONSAN[1]}).json()["grade"] == "보통"
+
+
+def test_stations_lists_every_station_with_values(client: TestClient):
+    assert client.get("/api/air/stations").status_code == 503  # 키 없음
+    client.app.state.air_provider = _provider([
+        _reading("연산동", "25", "20"), _reading("광복동", "-", "-"), _reading("부산항", "90", "40"),
+    ])
+    body = client.get("/api/air/stations").json()
+    # 점검 중(광복동)과 좌표표에 없는 항만 측정소(부산항)는 빠진다
+    assert [s["station"] for s in body] == ["연산동"]
+    assert body[0]["grade"] == "보통" and body[0]["lat"] == YEONSAN[0]
