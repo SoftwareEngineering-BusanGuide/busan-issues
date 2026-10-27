@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +12,13 @@ from app.schemas import ArticleOut, IssueDetail, IssueOut, IssueSummary, NearbyI
 
 router = APIRouter(prefix="/issues", tags=["issues"])
 
+# 최근 며칠 안에 갱신된 이슈만 보여준다 (과거 4주치까지 모으므로 화면에서 기간을 고른다)
+DAYS = Query(7, ge=1, le=30, description="최근 며칠 안에 갱신된 이슈")
+
+
+def _since(days: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
 
 @router.get("/nearby", response_model=list[NearbyIssue])
 def nearby_issues(
@@ -17,10 +26,11 @@ def nearby_issues(
     lng: float = Query(ge=-180, le=180),
     radius: float = Query(DEFAULT_RADIUS_KM, gt=0, le=MAX_RADIUS_KM, description="km"),
     category: str | None = Query(None, description=f"분류: {', '.join(CATEGORIES)}"),
+    days: int = DAYS,
     session: Session = Depends(get_session),
 ) -> list[NearbyIssue]:
     """API-002 내 주변 이슈 (FR-002, FR-011). 위치는 계산에만 쓰고 저장하지 않는다 (NFR-003)."""
-    stmt = select(Issue).where(Issue.lat.is_not(None), Issue.lng.is_not(None))
+    stmt = select(Issue).where(Issue.lat.is_not(None), Issue.lng.is_not(None), Issue.updated_at >= _since(days))
     if category:
         stmt = stmt.where(Issue.category == category)
 
@@ -37,10 +47,16 @@ def nearby_issues(
 @router.get("/top", response_model=list[IssueSummary])
 def top_issues(
     limit: int = Query(5, ge=1, le=20),
+    days: int = DAYS,
     session: Session = Depends(get_session),
 ) -> list[Issue]:
     """API-003 부산 주요 이슈 (FR-003). 위치와 관계없이 중요도가 높은 최신 이슈."""
-    stmt = select(Issue).where(Issue.importance == IMPORTANCE_HIGH).order_by(Issue.updated_at.desc()).limit(limit)
+    stmt = (
+        select(Issue)
+        .where(Issue.importance == IMPORTANCE_HIGH, Issue.updated_at >= _since(days))
+        .order_by(Issue.updated_at.desc())
+        .limit(limit)
+    )
     return list(session.scalars(stmt))
 
 

@@ -35,6 +35,14 @@ export const DISTRICTS: { name: string; lat: number; lng: number }[] = [
 
 export const RADIUS_OPTIONS_KM = [2, 5, 10]
 
+/** 이슈 기간 (최근 며칠 안에 갱신된 이슈). 서버는 최근 4주치 기사까지 모은다 */
+export const PERIOD_OPTIONS = [
+  { days: 1, label: '24시간' },
+  { days: 7, label: '7일' },
+  { days: 30, label: '30일' },
+]
+export const DEFAULT_PERIOD_DAYS = 7
+
 /** 이슈 분류 (backend/app/constants.py의 CATEGORIES와 맞춘다) */
 export const CATEGORY_META: Record<string, { icon: string; color: string }> = {
   '재난·안전': { icon: '⚠️', color: '#ef4444' },

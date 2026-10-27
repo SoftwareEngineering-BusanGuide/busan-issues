@@ -7,7 +7,7 @@ import IssueDetailView from './components/panel/IssueDetailView'
 import IssueList from './components/panel/IssueList'
 import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
-import { DEFAULT_LOCATION, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
+import { DEFAULT_LOCATION, DEFAULT_PERIOD_DAYS, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
 import { isInBusan } from './lib/geo'
 import type { AirNow, Alert, IssueDetail, IssueSummary, NearbyIssue, UserLocation, WeatherNow } from './types'
 
@@ -34,6 +34,7 @@ export default function App() {
   const [location, setLocation] = useState<UserLocation>(DEFAULT_LOCATION)
   const [radiusKm, setRadiusKm] = useState(RADIUS_OPTIONS_KM[0])
   const [category, setCategory] = useState('')
+  const [periodDays, setPeriodDays] = useState(DEFAULT_PERIOD_DAYS)
   // 접속하자마자 위치를 요청하므로 처음부터 '확인 중' 상태로 시작한다
   const [locating, setLocating] = useState(GEO_SUPPORTED)
   const [notice, setNotice] = useState<string | null>(GEO_SUPPORTED ? null : GEO_UNSUPPORTED_NOTICE)
@@ -96,25 +97,33 @@ export default function App() {
   }
 
   // API-002 내 주변 이슈
-  const nearbyKey = `${location.lat},${location.lng},${radiusKm},${category}`
+  const nearbyKey = `${location.lat},${location.lng},${radiusKm},${periodDays},${category}`
   useEffect(() => {
     let ignore = false
-    fetchNearbyIssues(location.lat, location.lng, radiusKm, category || undefined)
+    fetchNearbyIssues(location.lat, location.lng, radiusKm, periodDays, category || undefined)
       .then((data) => !ignore && setNearbyResult({ key: nearbyKey, data, error: null }))
       .catch(() => !ignore && setNearbyResult({ key: nearbyKey, data: [], error: SERVER_ERROR }))
     return () => {
       ignore = true
     }
-  }, [nearbyKey, location.lat, location.lng, radiusKm, category, now])
+  }, [nearbyKey, location.lat, location.lng, radiusKm, periodDays, category, now])
   const nearby = nearbyResult.data
   const nearbyLoading = nearbyResult.key !== nearbyKey
 
-  // API-003 부산 주요 이슈, API-007 재난문자
+  // API-003 부산 주요 이슈 (선택한 기간 안)
   useEffect(() => {
     let ignore = false
-    fetchTopIssues()
+    fetchTopIssues(periodDays)
       .then((data) => !ignore && setTopIssues(data))
       .catch(() => {})
+    return () => {
+      ignore = true
+    }
+  }, [periodDays, now])
+
+  // API-007 재난문자
+  useEffect(() => {
+    let ignore = false
     fetchAlerts()
       .then((data) => {
         if (ignore) return
@@ -186,10 +195,12 @@ export default function App() {
           <LocationControl
             location={location}
             radiusKm={radiusKm}
+            periodDays={periodDays}
             locating={locating}
             onUseMyLocation={locate}
             onSelectDistrict={selectDistrict}
             onRadiusChange={setRadiusKm}
+            onPeriodChange={setPeriodDays}
           />
           {selectedId == null ? (
             <IssueList

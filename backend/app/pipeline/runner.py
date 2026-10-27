@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.constants import IMPORTANCE_HIGH
@@ -47,7 +47,8 @@ class NewsPipeline:
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         batch_size: int = 25,
         max_per_run: int = 300,
-        recent_hours: int = 48,
+        max_age_days: int = 28,
+        match_window_days: int = 3,
         summary_limit: int = 8,
     ):
         self._db = db
@@ -56,7 +57,8 @@ class NewsPipeline:
         self._now = now
         self._batch_size = batch_size
         self._max_per_run = max_per_run
-        self._recent_hours = recent_hours
+        self._max_age_days = max_age_days
+        self._match_window = timedelta(days=match_window_days)
         self._summary_limit = summary_limit
         self._lock = threading.Lock()
 
@@ -67,7 +69,7 @@ class NewsPipeline:
         try:
             stats = PipelineStats()
             with self._db.session_factory() as session:
-                stats.collected = collect_news(session, self._naver, self._now())
+                stats.collected = collect_news(session, self._naver, self._now(), self._max_age_days)
                 relevant = self._classify(session, stats)
                 changed = self._group(session, relevant, stats)
                 self._summarize(session, changed, stats)
@@ -77,10 +79,29 @@ class NewsPipeline:
             self._lock.release()
 
     # ── 판별·분류 ──
+    def _pick_pending(self, session: Session) -> list[Article]:
+        """판별할 기사를 고른다. 최신 기사만 고르면 과거 이슈가 한참 뒤에야 나타나므로,
+        날짜별로 돌아가며(최신 날짜부터) 고르게 뽑아 첫 실행부터 4주 전체가 조금씩 채워지게 한다."""
+        rows = session.execute(
+            select(Article.id, Article.published_at).where(Article.triage == "pending").order_by(Article.published_at.desc())
+        ).all()
+        by_day: dict[str, list[int]] = {}
+        for article_id, published_at in rows:
+            by_day.setdefault(published_at.astimezone(KST).strftime("%Y-%m-%d"), []).append(article_id)
+        days = sorted(by_day, reverse=True)
+        picked: list[int] = []
+        while len(picked) < self._max_per_run and any(by_day.values()):
+            for day in days:
+                if by_day[day] and len(picked) < self._max_per_run:
+                    picked.append(by_day[day].pop(0))
+        if not picked:
+            return []
+        articles = list(session.scalars(select(Article).where(Article.id.in_(picked))))
+        # 같은 판별 묶음에 비슷한 시기의 기사가 모이도록 시간순으로 정렬한다
+        return sorted(articles, key=lambda a: a.published_at, reverse=True)
+
     def _classify(self, session: Session, stats: PipelineStats) -> list[tuple[Article, analyzer.Classification]]:
-        pending = list(session.scalars(
-            select(Article).where(Article.triage == "pending").order_by(Article.published_at.desc()).limit(self._max_per_run)
-        ))
+        pending = self._pick_pending(session)
         relevant = []
         for batch in _chunks(pending, self._batch_size):
             try:
@@ -108,10 +129,6 @@ class NewsPipeline:
     ) -> set[int]:
         if not relevant:
             return set()
-        since = self._now() - timedelta(hours=self._recent_hours)
-        recent = {i.id: i for i in session.scalars(
-            select(Issue).where(Issue.updated_at >= since).order_by(Issue.updated_at.desc()).limit(80)
-        )}
         geocoder = Geocoder(self._naver)
         changed: set[int] = set()
         created_ids: set[int] = set()
@@ -119,6 +136,7 @@ class NewsPipeline:
         # 오래된 기사부터 붙여야 이슈의 첫 기사·제목이 사건의 시작이 된다
         relevant.sort(key=lambda pair: pair[0].published_at)
         for batch in _chunks(relevant, 30):
+            recent = self._candidate_issues(session, batch[0][0].published_at, batch[-1][0].published_at)
             try:
                 assignments = analyzer.group(
                     self._llm,
@@ -161,6 +179,23 @@ class NewsPipeline:
         stats.issues_created = len(created_ids)
         stats.issues_updated = len(changed - created_ids)
         return changed
+
+    def _candidate_issues(self, session: Session, oldest: datetime, newest: datetime) -> dict[int, Issue]:
+        """이 기사 묶음과 기간이 겹치는 이슈 (앞뒤 match_window). 몇 주 전 기사도 그 무렵의 이슈와 비교하게 한다."""
+        first_at = (
+            select(Article.issue_id, func.min(Article.published_at).label("first_at"))
+            .where(Article.issue_id.is_not(None))
+            .group_by(Article.issue_id)
+            .subquery()
+        )
+        stmt = (
+            select(Issue)
+            .join(first_at, first_at.c.issue_id == Issue.id)
+            .where(Issue.updated_at >= oldest - self._match_window, first_at.c.first_at <= newest + self._match_window)
+            .order_by(Issue.updated_at.desc())
+            .limit(80)
+        )
+        return {i.id: i for i in session.scalars(stmt)}
 
     # ── 상황 요약 (기사 2건 이상) ──
     def _summarize(self, session: Session, changed: set[int], stats: PipelineStats) -> None:
