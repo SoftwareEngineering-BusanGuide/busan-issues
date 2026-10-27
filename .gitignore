@@ -242,3 +242,6 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# 프론트엔드 소스 폴더 (위의 Python용 lib/ 규칙에 걸리지 않도록)
+!frontend/src/lib/
