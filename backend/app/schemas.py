@@ -68,8 +68,33 @@ class WeatherOut(BaseModel):
     # 맑음 / 구름많음 / 흐림. 예보를 못 받으면 None
     sky: str | None
     wind_speed: float | None
+    # 바람이 불어오는 방향 (도, 북=0 시계방향). 기상청 VEC
+    wind_direction: float | None = None
     observed_at: datetime
     source: str
+
+
+class DistrictWeather(BaseModel):
+    """지도 날씨·바람 레이어용 구·군별 현재 날씨."""
+
+    district: str
+    lat: float
+    lng: float
+    weather: WeatherOut
+
+
+class AirStationOut(BaseModel):
+    """지도 미세먼지 레이어용 측정소별 값."""
+
+    station: str
+    lat: float
+    lng: float
+    pm10: int | None
+    pm25: int | None
+    pm10_grade: str | None
+    pm25_grade: str | None
+    grade: str | None
+    measured_at: datetime
 
 
 class AirOut(BaseModel):

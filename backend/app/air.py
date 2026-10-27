@@ -6,7 +6,7 @@ import httpx
 
 from app.cache import StaleCache
 from app.geo import distance_km
-from app.schemas import AirOut
+from app.schemas import AirOut, AirStationOut
 
 KST = timezone(timedelta(hours=9))
 AIRKOREA_URL = "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty"
@@ -57,12 +57,38 @@ def _measured_at(raw: str) -> datetime:
     return base + timedelta(hours=hour, minutes=minute)
 
 
+def _station(name: str, lat: float, lng: float, reading: dict | None) -> AirStationOut | None:
+    """측정값 하나를 등급과 함께 정리한다. 점검 중이라 값이 없으면 None."""
+    if not reading:
+        return None
+    pm10, pm25 = _value(reading.get("pm10Value")), _value(reading.get("pm25Value"))
+    if pm10 is None and pm25 is None:
+        return None
+    g10 = pm10_grade(pm10) if pm10 is not None else None
+    g25 = pm25_grade(pm25) if pm25 is not None else None
+    return AirStationOut(
+        station=name, lat=lat, lng=lng, pm10=pm10, pm25=pm25, pm10_grade=g10, pm25_grade=g25,
+        grade=max((g for g in (g10, g25) if g), key=GRADES.index),
+        measured_at=_measured_at(reading["dataTime"]),
+    )
+
+
 class AirKoreaProvider:
     def __init__(self, api_key: str, client: httpx.Client | None = None):
         self._api_key = api_key
         self._client = client or httpx.Client(timeout=10)
         # 측정값은 한 시간에 한 번 바뀐다
         self._cache: StaleCache[list[dict]] = StaleCache(ttl_seconds=600)
+
+    def stations(self) -> list[AirStationOut]:
+        """좌표를 아는 측정소 중 값이 있는 곳 전부 (지도 레이어용)."""
+        readings = {r["stationName"]: r for r in self._cache.get("busan", self._fetch)}
+        result = []
+        for name, (lat, lng) in STATIONS.items():
+            station = _station(name, lat, lng, readings.get(name))
+            if station:
+                result.append(station)
+        return result
 
     def nearest(self, lat: float, lng: float) -> AirOut:
         readings = {r["stationName"]: r for r in self._cache.get("busan", self._fetch)}
@@ -71,22 +97,9 @@ class AirKoreaProvider:
         )
         # 가까운 순으로, 미세먼지 값이 있는 측정소를 고른다
         for dist, name in candidates:
-            r = readings[name]
-            pm10, pm25 = _value(r.get("pm10Value")), _value(r.get("pm25Value"))
-            if pm10 is None and pm25 is None:
-                continue
-            grades = [g for g in (pm10 is not None and pm10_grade(pm10), pm25 is not None and pm25_grade(pm25)) if g]
-            return AirOut(
-                station=name,
-                distance_km=round(dist, 2),
-                pm10=pm10,
-                pm25=pm25,
-                pm10_grade=pm10_grade(pm10) if pm10 is not None else None,
-                pm25_grade=pm25_grade(pm25) if pm25 is not None else None,
-                grade=max(grades, key=GRADES.index),
-                measured_at=_measured_at(r["dataTime"]),
-                source=SOURCE,
-            )
+            station = _station(name, *STATIONS[name], readings[name])
+            if station:
+                return AirOut(**station.model_dump(exclude={"lat", "lng"}), distance_km=round(dist, 2), source=SOURCE)
         raise LookupError("미세먼지 값을 제공하는 측정소가 없습니다.")
 
     def _fetch(self) -> list[dict]:

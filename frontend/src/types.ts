@@ -53,8 +53,38 @@ export interface WeatherNow {
   /** 맑음 / 구름많음 / 흐림 */
   sky: string | null
   wind_speed: number | null
+  /** 바람이 불어오는 방향 (도, 북=0 시계방향) */
+  wind_direction: number | null
   observed_at: string
   source: string
+}
+
+export interface DistrictWeather {
+  district: string
+  lat: number
+  lng: number
+  weather: WeatherNow
+}
+
+export interface AirStation {
+  station: string
+  lat: number
+  lng: number
+  pm10: number | null
+  pm25: number | null
+  pm10_grade: AirGrade | null
+  pm25_grade: AirGrade | null
+  grade: AirGrade | null
+  measured_at: string
+}
+
+/** 지도 레이어 켜짐 여부 */
+export interface MapLayers {
+  issues: boolean
+  satellite: boolean
+  weather: boolean
+  wind: boolean
+  air: boolean
 }
 
 export type AirGrade = '좋음' | '보통' | '나쁨' | '매우나쁨'

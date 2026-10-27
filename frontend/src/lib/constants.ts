@@ -1,4 +1,4 @@
-import type { AirGrade, UserLocation } from '../types'
+import type { AirGrade, MapLayers, UserLocation } from '../types'
 
 /** 위치 권한이 없을 때 쓰는 기본 위치 */
 export const DEFAULT_LOCATION: UserLocation = { lat: 35.1798, lng: 129.075, label: '부산시청 (기본 위치)' }
@@ -71,4 +71,29 @@ export function weatherIcon(precipitationType: string, sky: string | null): stri
   if (sky === '맑음') return '☀️'
   if (sky === '흐림') return '☁️'
   return '⛅'
+}
+
+/** 지도 레이어 목록 (레이어 패널 표시 순서) */
+export const LAYER_OPTIONS: { key: keyof MapLayers; label: string; icon: string }[] = [
+  { key: 'issues', label: '뉴스 이슈', icon: '📰' },
+  { key: 'satellite', label: '위성사진', icon: '🛰️' },
+  { key: 'weather', label: '날씨', icon: '🌤️' },
+  { key: 'wind', label: '바람', icon: '💨' },
+  { key: 'air', label: '미세먼지', icon: '😷' },
+]
+
+export const DEFAULT_LAYERS: MapLayers = { issues: true, satellite: false, weather: false, wind: false, air: false }
+
+/** 위성사진: EOX Sentinel-2 cloudless (CC BY-NC-SA 4.0, 비상업 이용·출처 표시) */
+export const SATELLITE_TILES = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'
+export const SATELLITE_ATTRIBUTION =
+  '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)'
+
+/** 풍속 색 (m/s). 14m/s 이상은 강풍주의보 수준 */
+export function windColor(speed: number | null): string {
+  if (speed == null) return '#8b98a8'
+  if (speed >= 14) return '#ef4444'
+  if (speed >= 9) return '#fb923c'
+  if (speed >= 4) return '#facc15'
+  return '#38bdf8'
 }

@@ -122,4 +122,6 @@ backend/
 | API-007 | `GET /api/alerts` | ✅ 실시간 |
 | (추가) | `GET /api/weather?lat&lng` | ✅ 기상청 실시간 |
 | (추가) | `GET /api/air?lat&lng` | ✅ 에어코리아 실시간 |
+| (추가) | `GET /api/weather/districts` | ✅ 지도 날씨·바람 레이어: 16개 구·군 현재 날씨 (풍향 포함) |
+| (추가) | `GET /api/air/stations` | ✅ 지도 미세먼지 레이어: 측정소별 실시간 값 |
 | (추가) | `GET /api/pipeline/status` | ✅ 뉴스 수집 상태 (키 값은 내보내지 않음) |

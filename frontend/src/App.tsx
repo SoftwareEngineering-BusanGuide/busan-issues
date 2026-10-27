@@ -1,20 +1,61 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchAir, fetchAlerts, fetchIssueDetail, fetchNearbyIssues, fetchTopIssues, fetchWeather } from './api/client'
+import {
+  fetchAir,
+  fetchAirStations,
+  fetchAlerts,
+  fetchDistrictWeather,
+  fetchIssueDetail,
+  fetchNearbyIssues,
+  fetchTopIssues,
+  fetchWeather,
+} from './api/client'
 import TopBar from './components/header/TopBar'
 import TopIssues from './components/header/TopIssues'
 import IssueMap from './components/map/IssueMap'
+import LayerControl from './components/map/LayerControl'
 import IssueDetailView from './components/panel/IssueDetailView'
 import IssueList from './components/panel/IssueList'
 import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
-import { DEFAULT_LOCATION, DEFAULT_PERIOD_DAYS, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
+import { DEFAULT_LAYERS, DEFAULT_LOCATION, DEFAULT_PERIOD_DAYS, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
 import { isInBusan } from './lib/geo'
-import type { AirNow, Alert, IssueDetail, IssueSummary, NearbyIssue, UserLocation, WeatherNow } from './types'
+import type {
+  AirNow,
+  AirStation,
+  Alert,
+  DistrictWeather,
+  IssueDetail,
+  IssueSummary,
+  MapLayers,
+  NearbyIssue,
+  UserLocation,
+  WeatherNow,
+} from './types'
 
 const SERVER_ERROR = '서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인하세요.'
 const REFRESH_MS = 60_000
 const GEO_SUPPORTED = 'geolocation' in navigator
 const GEO_UNSUPPORTED_NOTICE = '이 브라우저는 위치 기능을 지원하지 않습니다. 구·군을 직접 선택하세요.'
+
+const LAYERS_STORAGE_KEY = 'busan-alimi:layers'
+
+/** 사용자가 고른 지도 레이어를 브라우저에 기억한다. 저장소를 못 쓰면 기본값 */
+function loadLayers(): MapLayers {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYERS_STORAGE_KEY) ?? 'null') as Partial<MapLayers> | null
+    return { ...DEFAULT_LAYERS, ...(saved ?? {}) }
+  } catch {
+    return DEFAULT_LAYERS
+  }
+}
+
+function saveLayers(layers: MapLayers): void {
+  try {
+    localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify(layers))
+  } catch {
+    // 시크릿 모드 등 저장소를 못 쓰면 이번 방문 동안만 유지한다
+  }
+}
 
 interface NearbyResult {
   /** 어떤 조건(위치·반경·분류)으로 받은 결과인지. 지금 조건과 다르면 불러오는 중이다. */
@@ -45,6 +86,18 @@ export default function App() {
   const [alertsError, setAlertsError] = useState(false)
   const [weather, setWeather] = useState<WeatherNow | null>(null)
   const [air, setAir] = useState<AirNow | null>(null)
+
+  // 지도 레이어
+  const [layers, setLayers] = useState<MapLayers>(loadLayers)
+  const [districtWeather, setDistrictWeather] = useState<DistrictWeather[]>([])
+  const [airStations, setAirStations] = useState<AirStation[]>([])
+  const [layerErrors, setLayerErrors] = useState<Partial<Record<keyof MapLayers, boolean>>>({})
+  const toggleLayer = (key: keyof MapLayers) =>
+    setLayers((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      saveLayers(next)
+      return next
+    })
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detailResult, setDetailResult] = useState<DetailResult | null>(null)
@@ -136,6 +189,39 @@ export default function App() {
     }
   }, [now])
 
+  // 날씨·바람 레이어 데이터 (둘 중 하나라도 켜져 있을 때만)
+  const needDistrictWeather = layers.weather || layers.wind
+  useEffect(() => {
+    if (!needDistrictWeather) return
+    let ignore = false
+    fetchDistrictWeather()
+      .then((data) => {
+        if (ignore) return
+        setDistrictWeather(data)
+        setLayerErrors((e) => ({ ...e, weather: false, wind: false }))
+      })
+      .catch(() => !ignore && setLayerErrors((e) => ({ ...e, weather: true, wind: true })))
+    return () => {
+      ignore = true
+    }
+  }, [needDistrictWeather, now])
+
+  // 미세먼지 레이어 데이터
+  useEffect(() => {
+    if (!layers.air) return
+    let ignore = false
+    fetchAirStations()
+      .then((data) => {
+        if (ignore) return
+        setAirStations(data)
+        setLayerErrors((e) => ({ ...e, air: false }))
+      })
+      .catch(() => !ignore && setLayerErrors((e) => ({ ...e, air: true })))
+    return () => {
+      ignore = true
+    }
+  }, [layers.air, now])
+
   // 기준 위치의 날씨·미세먼지 (서버가 10분 캐시하므로 1분마다 불러도 외부 API 호출은 늘지 않는다)
   useEffect(() => {
     let ignore = false
@@ -180,9 +266,19 @@ export default function App() {
 
       <main className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div className="relative h-[45dvh] shrink-0 md:h-auto md:flex-1">
-          <IssueMap issues={mapIssues} location={location} radiusKm={radiusKm} selectedId={selectedId} onSelect={setSelectedId} />
+          <IssueMap
+            issues={mapIssues}
+            location={location}
+            radiusKm={radiusKm}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            layers={layers}
+            districtWeather={districtWeather}
+            airStations={airStations}
+          />
+          <LayerControl layers={layers} onToggle={toggleLayer} unavailable={layerErrors} />
           {notice && (
-            <div className="absolute top-3 right-3 left-14 flex items-start md:right-auto md:left-1/2 md:w-[460px] md:-translate-x-1/2 gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg">
+            <div className="absolute top-14 right-3 left-14 z-10 flex items-start md:top-3 md:right-auto md:left-1/2 md:w-[400px] md:-translate-x-1/2 gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg">
               <span className="flex-1">{notice}</span>
               <button type="button" onClick={() => setNotice(null)} aria-label="안내 닫기" className="text-muted hover:text-foreground">
                 ✕

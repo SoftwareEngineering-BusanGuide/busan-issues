@@ -66,3 +66,39 @@ def test_endpoint_uses_provider_and_validates_range(client: TestClient):
     res = client.get("/api/weather", params={"lat": 35.1798, "lng": 129.0750})
     assert res.status_code == 200 and res.json()["temperature"] == 17.2
     assert client.get("/api/weather", params={"lat": 37.5, "lng": 127.0}).status_code == 422  # 서울
+
+
+def test_provider_reads_wind_direction():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("getUltraSrtNcst"):
+            return httpx.Response(200, json=_kma_response([
+                {"category": "T1H", "obsrValue": "17"}, {"category": "VEC", "obsrValue": "228"},
+                {"category": "WSD", "obsrValue": "3.5"}, {"category": "PTY", "obsrValue": "0"},
+            ]))
+        return httpx.Response(500)
+
+    w = KmaWeatherProvider("k", client=httpx.Client(transport=httpx.MockTransport(handler))).current(35.1798, 129.075)
+    assert (w.wind_direction, w.wind_speed) == (228, 3.5)
+
+
+class _DistrictProvider:
+    """구 이름(좌표)에 따라 날씨를 주고, 사하구 좌표에서는 실패하는 가짜 제공자."""
+
+    def current(self, lat: float, lng: float):
+        from app.cache import DataUnavailable
+        from app.schemas import WeatherOut
+
+        if (lat, lng) == (35.1046, 128.9748):  # 사하구
+            raise DataUnavailable("down")
+        return WeatherOut(temperature=round(lat, 2), humidity=50, precipitation_1h=0, precipitation_type="없음",
+                          sky="맑음", wind_speed=2, wind_direction=90, observed_at=datetime(2026, 10, 27, 12, tzinfo=KST),
+                          source="test")
+
+
+def test_district_weather_returns_all_districts_except_failed(client: TestClient):
+    assert client.get("/api/weather/districts").status_code == 503  # 키 없음
+    client.app.state.weather_provider = _DistrictProvider()
+    body = client.get("/api/weather/districts").json()
+    names = {d["district"] for d in body}
+    assert len(body) == 15 and "사하구" not in names and "해운대구" in names
+    assert body[0]["weather"]["wind_direction"] == 90

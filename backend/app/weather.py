@@ -106,6 +106,7 @@ class KmaWeatherProvider:
             precipitation_type=PRECIPITATION_TYPES.get(str(obs.get("PTY")), "없음"),
             sky=sky,
             wind_speed=_number(obs.get("WSD")),
+            wind_direction=_number(obs.get("VEC")),
             observed_at=ncst_base,
             source=SOURCE,
         )
