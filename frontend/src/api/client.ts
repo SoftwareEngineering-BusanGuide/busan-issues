@@ -1,4 +1,4 @@
-import type { AirNow, AirStation, Alert, DistrictWeather, IssueDetail, IssueSummary, NearbyIssue, WeatherNow } from '../types'
+import type { AirNow, AirStation, Alert, IssueDetail, IssueSummary, NearbyIssue, WeatherGrid, WeatherNow } from '../types'
 
 async function getJson<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const query = new URLSearchParams()
@@ -30,8 +30,8 @@ export const fetchWeather = (lat: number, lng: number) => getJson<WeatherNow>('/
 /** 기준 위치에서 가장 가까운 측정소의 미세먼지 (에어코리아) */
 export const fetchAir = (lat: number, lng: number) => getJson<AirNow>('/api/air', { lat, lng })
 
-/** 지도 날씨·바람 레이어: 16개 구·군의 현재 날씨 */
-export const fetchDistrictWeather = () => getJson<DistrictWeather[]>('/api/weather/districts')
+/** 지도 기온·바람 레이어: 부산 일대 격자 실황 (매시 갱신) */
+export const fetchWeatherGrid = () => getJson<WeatherGrid>('/api/weather/grid')
 
 /** 지도 미세먼지 레이어: 측정소별 실시간 값 */
 export const fetchAirStations = () => getJson<AirStation[]>('/api/air/stations')

@@ -74,13 +74,16 @@ class WeatherOut(BaseModel):
     source: str
 
 
-class DistrictWeather(BaseModel):
-    """지도 날씨·바람 레이어용 구·군별 현재 날씨."""
+class WeatherGrid(BaseModel):
+    """지도 기온·바람 레이어용 부산 일대 격자 실황. 값은 [위도 행][경도 열], 바다처럼 관측이 없는 칸은 None."""
 
-    district: str
-    lat: float
-    lng: float
-    weather: WeatherOut
+    lats: list[float]  # 남→북
+    lngs: list[float]  # 서→동
+    temperature: list[list[float | None]]  # ℃
+    u: list[list[float | None]]  # 동서 바람 성분 (m/s, 동쪽 +)
+    v: list[list[float | None]]  # 남북 바람 성분 (m/s, 북쪽 +)
+    observed_at: datetime
+    source: str
 
 
 class AirStationOut(BaseModel):

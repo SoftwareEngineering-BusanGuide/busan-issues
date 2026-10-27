@@ -6,9 +6,9 @@ CATEGORIES = ("재난·안전", "사건·사고", "교통", "공사·생활", "�
 IMPORTANCE_HIGH = "high"
 IMPORTANCE_NORMAL = "normal"
 
-# 주변 이슈 기본 반경 (FR-002)
-DEFAULT_RADIUS_KM = 2.0
-MAX_RADIUS_KM = 20.0
+# 주변 이슈 기본 반경 (FR-002). SRS는 2km였으나 사용자 요청으로 10km로 변경. 최대값은 '부산 전체' 선택용
+DEFAULT_RADIUS_KM = 10.0
+MAX_RADIUS_KM = 50.0
 
 # 구·군청 좌표. 기사에서 구체적인 장소를 찾지 못하면 구·군 단위로 지도에 표시한다 (SRS 위험관리: 장소 추출 실패)
 DISTRICT_CENTERS: dict[str, tuple[float, float]] = {

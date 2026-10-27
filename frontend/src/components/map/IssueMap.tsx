@@ -1,18 +1,20 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useRef } from 'react'
+import type { FeatureCollection } from 'geojson'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   AIR_GRADE_COLOR,
   BUSAN_BOUNDS,
+  BUSAN_LAND_BOUNDS,
   MAP_STYLE_URL,
   SATELLITE_ATTRIBUTION,
   SATELLITE_TILES,
   categoryMeta,
-  weatherIcon,
-  windColor,
 } from '../../lib/constants'
 import { circlePolygon } from '../../lib/geo'
-import type { AirStation, DistrictWeather, IssueSummary, MapLayers, UserLocation } from '../../types'
+import { fillGrid, renderTemperatureImage, windDirectionName } from '../../lib/weatherField'
+import type { AirStation, IssueSummary, MapLayers, UserLocation, WeatherGrid, WeatherNow } from '../../types'
+import { startWindParticles } from './windParticles'
 
 interface IssueMapProps {
   issues: IssueSummary[]
@@ -21,54 +23,25 @@ interface IssueMapProps {
   selectedId: number | null
   onSelect: (id: number) => void
   layers: MapLayers
-  districtWeather: DistrictWeather[]
+  weatherGrid: WeatherGrid | null
   airStations: AirStation[]
+  /** 기준 위치의 현재 날씨 (기온·바람 레이어를 켜면 말풍선으로 보여준다) */
+  weather: WeatherNow | null
 }
 
 const RADIUS_SOURCE = 'search-radius'
 const SATELLITE_LAYER = 'satellite'
+const TEMPERATURE_LAYER = 'temperature'
+const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-/** 오버레이 마커 묶음을 데이터로 다시 그린다 (레이어가 꺼져 있으면 items를 빈 배열로) */
-function syncMarkers<T>(
-  map: maplibregl.Map,
-  store: maplibregl.Marker[],
-  items: T[],
-  make: (item: T) => maplibregl.Marker,
-): maplibregl.Marker[] {
-  store.forEach((m) => m.remove())
-  return items.map((item) => make(item).addTo(map))
-}
-
-function weatherElement(d: DistrictWeather): HTMLElement {
-  const w = d.weather
-  const el = document.createElement('div')
-  el.className = 'weather-marker'
-  el.textContent = `${weatherIcon(w.precipitation_type, w.sky)} ${w.temperature != null ? Math.round(w.temperature) + '°' : '-'}`
-  el.title = `${d.district} · ${w.precipitation_type !== '없음' ? w.precipitation_type : (w.sky ?? '')} · 습도 ${w.humidity ?? '-'}%`
-  return el
-}
-
-function windElement(d: DistrictWeather): HTMLElement {
-  const { wind_direction: dir, wind_speed: speed } = d.weather
-  const el = document.createElement('div')
-  el.className = 'wind-marker'
-  el.style.setProperty('--wind-color', windColor(speed))
-  // 기상청 풍향은 '불어오는' 방향이라 180°를 더해 '불어 가는' 방향으로 화살표를 돌린다
-  const rotation = dir != null ? dir + 180 : 0
-  el.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" style="transform: rotate(${rotation}deg)" aria-hidden="true"><path d="M12 2 L18 14 L13 12 L13 22 L11 22 L11 12 L6 14 Z" fill="currentColor"/></svg><span></span>`
-  el.querySelector('span')!.textContent = speed != null ? `${speed}` : '-'
-  el.title = `${d.district} 바람 ${speed ?? '-'}m/s (${dir ?? '-'}°에서 불어옴)`
-  return el
-}
-
-function airElement(s: AirStation): HTMLElement {
-  const el = document.createElement('div')
-  el.className = 'air-marker'
-  el.style.setProperty('--air-color', s.grade ? AIR_GRADE_COLOR[s.grade] : '#8b98a8')
-  el.textContent = String(s.pm10 ?? s.pm25 ?? '-')
-  el.title = `${s.station} 측정소 · PM10 ${s.pm10 ?? '-'}㎍/㎥ (${s.pm10_grade ?? '-'}) · PM2.5 ${s.pm25 ?? '-'}㎍/㎥ (${s.pm25_grade ?? '-'})`
-  return el
-}
+/** 이미지 소스 좌표: 지도 이동 범위 전체 (좌상, 우상, 우하, 좌하) */
+const [[WEST, SOUTH], [EAST, NORTH]] = BUSAN_BOUNDS
+const IMAGE_CORNERS: [[number, number], [number, number], [number, number], [number, number]] = [
+  [WEST, NORTH],
+  [EAST, NORTH],
+  [EAST, SOUTH],
+  [WEST, SOUTH],
+]
 
 function createMarkerElement(issue: IssueSummary, onClick: () => void): HTMLElement {
   const el = document.createElement('button')
@@ -93,6 +66,33 @@ function createLocationElement(): HTMLElement {
   return el
 }
 
+function airElement(s: AirStation): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'air-marker'
+  el.style.setProperty('--air-color', s.grade ? AIR_GRADE_COLOR[s.grade] : '#8b98a8')
+  el.textContent = String(s.pm10 ?? s.pm25 ?? '-')
+  el.title = `${s.station} 측정소 · PM10 ${s.pm10 ?? '-'}㎍/㎥ (${s.pm10_grade ?? '-'}) · PM2.5 ${s.pm25 ?? '-'}㎍/㎥ (${s.pm25_grade ?? '-'})`
+  return el
+}
+
+/** 기준 위치 말풍선: 애플 날씨처럼 기온 또는 바람을 크게 보여준다 */
+function bubbleElement(weather: WeatherNow, mode: 'temperature' | 'wind'): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'weather-bubble'
+  const main = document.createElement('strong')
+  const sub = document.createElement('span')
+  if (mode === 'wind') {
+    const dir = weather.wind_direction != null ? windDirectionName(weather.wind_direction) : ''
+    main.textContent = weather.wind_speed != null ? `${weather.wind_speed}` : '-'
+    sub.textContent = `${dir} m/s`
+  } else {
+    main.textContent = weather.temperature != null ? `${Math.round(weather.temperature)}°` : '-'
+    sub.textContent = weather.precipitation_type !== '없음' ? weather.precipitation_type : (weather.sky ?? '')
+  }
+  el.append(main, sub)
+  return el
+}
+
 export default function IssueMap({
   issues,
   location,
@@ -100,22 +100,29 @@ export default function IssueMap({
   selectedId,
   onSelect,
   layers,
-  districtWeather,
+  weatherGrid,
   airStations,
+  weather,
 }: IssueMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const windCanvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef(new Map<number, maplibregl.Marker>())
+  const airMarkersRef = useRef<maplibregl.Marker[]>([])
   const locationMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const bubbleRef = useRef<maplibregl.Marker | null>(null)
   const onSelectRef = useRef(onSelect)
-  const overlayRef = useRef({ weather: [] as maplibregl.Marker[], wind: [] as maplibregl.Marker[], air: [] as maplibregl.Marker[] })
-  // 스타일이 로드될 때 위성사진 표시 여부를 정하기 위해 최신 값을 둔다
-  const satelliteRef = useRef(layers.satellite)
-  // 최신 위치·반경. 지도 생성과 스타일 로드 시점에 이 값을 쓴다.
+  // 최신 위치·반경과 레이어. 지도 생성과 스타일 로드 시점에 이 값을 쓴다.
   const viewRef = useRef({ location, radiusKm })
+  const satelliteRef = useRef(layers.satellite)
   useEffect(() => {
     onSelectRef.current = onSelect
   }, [onSelect])
+
+  // 바다처럼 관측이 없는 칸을 채운 격자 (기온 면과 바람 입자가 같이 쓴다)
+  const filled = useMemo(() => (weatherGrid ? fillGrid(weatherGrid) : null), [weatherGrid])
+  const temperatureImage = useMemo(() => (filled ? renderTemperatureImage(filled, BUSAN_BOUNDS) : null), [filled])
+  const temperatureRef = useRef<{ on: boolean; image: string | null }>({ on: layers.weather, image: temperatureImage })
 
   // 지도 생성 (한 번)
   useEffect(() => {
@@ -125,7 +132,7 @@ export default function IssueMap({
       container: containerRef.current,
       style: MAP_STYLE_URL,
       center: [start.lng, start.lat],
-      zoom: 13,
+      zoom: 11,
       maxBounds: BUSAN_BOUNDS,
       attributionControl: { compact: true },
     })
@@ -139,8 +146,8 @@ export default function IssueMap({
           map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name'], ['get', 'name_en']])
         }
       }
-      // 위성사진: 지명(symbol) 레이어 아래에 넣어 지명은 위성사진 위에 그대로 보이게 한다
-      const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
+      // 위성사진·기온 면은 땅·물 면 바로 위, 도로·지명 아래에 넣어 도로와 지명이 위에 보이게 한다
+      const firstSymbol = belowRoads(map)
       map.addSource(SATELLITE_LAYER, {
         type: 'raster',
         tiles: [SATELLITE_TILES],
@@ -149,18 +156,15 @@ export default function IssueMap({
         attribution: SATELLITE_ATTRIBUTION,
       })
       map.addLayer(
-        {
-          id: SATELLITE_LAYER,
-          type: 'raster',
-          source: SATELLITE_LAYER,
-          layout: { visibility: satelliteRef.current ? 'visible' : 'none' },
-        },
+        { id: SATELLITE_LAYER, type: 'raster', source: SATELLITE_LAYER, layout: { visibility: satelliteRef.current ? 'visible' : 'none' } },
         firstSymbol,
       )
+      const { on, image } = temperatureRef.current
+      if (image) addTemperatureLayer(map, image, on, firstSymbol)
 
       // 스타일을 받는 사이에 위치가 바뀌었을 수 있어 최신 값으로 그린다
       const { location: loc, radiusKm: r } = viewRef.current
-      map.addSource(RADIUS_SOURCE, { type: 'geojson', data: circlePolygon(loc.lat, loc.lng, r) })
+      map.addSource(RADIUS_SOURCE, { type: 'geojson', data: loc.wholeCity ? EMPTY : circlePolygon(loc.lat, loc.lng, r) })
       map.addLayer({ id: 'radius-fill', type: 'fill', source: RADIUS_SOURCE, paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.06 } })
       map.addLayer({
         id: 'radius-line',
@@ -171,12 +175,9 @@ export default function IssueMap({
     })
     mapRef.current = map
     const markers = markersRef.current
-    const overlays = overlayRef.current
     return () => {
       markers.clear()
-      overlays.weather = []
-      overlays.wind = []
-      overlays.air = []
+      airMarkersRef.current = []
       map.remove()
       mapRef.current = null
     }
@@ -191,38 +192,65 @@ export default function IssueMap({
     }
   }, [layers.satellite])
 
-  // 날씨 레이어: 구·군마다 하늘 아이콘과 기온
+  // 기온 면: 격자를 색으로 칠한 이미지를 지도 전체에 깐다
   useEffect(() => {
+    temperatureRef.current = { on: layers.weather, image: temperatureImage }
     const map = mapRef.current
-    if (!map) return
-    overlayRef.current.weather = syncMarkers(map, overlayRef.current.weather, layers.weather ? districtWeather : [], (d) =>
-      new maplibregl.Marker({ element: weatherElement(d), offset: [0, -14] }).setLngLat([d.lng, d.lat]),
-    )
-  }, [layers.weather, districtWeather])
+    if (!map || !temperatureImage) return
+    const source = map.getSource<maplibregl.ImageSource>(TEMPERATURE_LAYER)
+    if (source) {
+      source.updateImage({ url: temperatureImage, coordinates: IMAGE_CORNERS })
+      map.setLayoutProperty(TEMPERATURE_LAYER, 'visibility', layers.weather ? 'visible' : 'none')
+    } else if (map.getSource(RADIUS_SOURCE)) {
+      // 스타일이 이미 로드된 뒤 처음 데이터가 온 경우 (로드 전이면 style.load 핸들러가 추가한다)
+      addTemperatureLayer(map, temperatureImage, layers.weather, belowRoads(map))
+    }
+  }, [layers.weather, temperatureImage])
 
-  // 바람 레이어: 구·군마다 불어 가는 방향의 화살표와 풍속 (날씨 마커 아래쪽에 둔다)
+  // 바람 입자: 켜져 있는 동안 캔버스에서 계속 흘려 보낸다
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
-    overlayRef.current.wind = syncMarkers(map, overlayRef.current.wind, layers.wind ? districtWeather : [], (d) =>
-      new maplibregl.Marker({ element: windElement(d), offset: [0, 14] }).setLngLat([d.lng, d.lat]),
-    )
-  }, [layers.wind, districtWeather])
+    const canvas = windCanvasRef.current
+    if (!map || !canvas || !layers.wind || !filled) return
+    return startWindParticles(map, canvas, filled)
+  }, [layers.wind, filled])
 
   // 미세먼지 레이어: 측정소마다 등급 색과 PM10 수치
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    overlayRef.current.air = syncMarkers(map, overlayRef.current.air, layers.air ? airStations : [], (s) =>
-      new maplibregl.Marker({ element: airElement(s) }).setLngLat([s.lng, s.lat]),
+    airMarkersRef.current.forEach((m) => m.remove())
+    airMarkersRef.current = (layers.air ? airStations : []).map((s) =>
+      new maplibregl.Marker({ element: airElement(s) }).setLngLat([s.lng, s.lat]).addTo(map),
     )
   }, [layers.air, airStations])
+
+  // 기준 위치 말풍선 (기온 또는 바람 레이어가 켜져 있을 때, 부산 전체 보기에서는 숨김)
+  useEffect(() => {
+    const map = mapRef.current
+    bubbleRef.current?.remove()
+    bubbleRef.current = null
+    if (!map || !weather || location.wholeCity || !(layers.weather || layers.wind)) return
+    const mode = layers.wind && !layers.weather ? 'wind' : 'temperature'
+    bubbleRef.current = new maplibregl.Marker({ element: bubbleElement(weather, mode), anchor: 'bottom', offset: [0, -12] })
+      .setLngLat([location.lng, location.lat])
+      .addTo(map)
+  }, [weather, location, layers.weather, layers.wind])
 
   // 기준 위치·반경이 바뀌면 위치 표시와 반경 원을 갱신하고 이동
   useEffect(() => {
     viewRef.current = { location, radiusKm }
     const map = mapRef.current
     if (!map) return
+    const radius = map.getSource<maplibregl.GeoJSONSource>(RADIUS_SOURCE)
+
+    if (location.wholeCity) {
+      // 부산 전체: 반경 원과 위치 점 없이 부산 전역이 보이게
+      locationMarkerRef.current?.remove()
+      radius?.setData(EMPTY)
+      map.fitBounds(BUSAN_LAND_BOUNDS, { padding: 20, speed: 1.4 })
+      return
+    }
     if (!locationMarkerRef.current) {
       locationMarkerRef.current = new maplibregl.Marker({ element: createLocationElement() })
     }
@@ -230,10 +258,10 @@ export default function IssueMap({
 
     // 반경 원이 아직 없으면(스타일 로드 전) style.load 핸들러가 viewRef의 최신 값으로 그린다.
     // isStyleLoaded()는 타일을 받는 중에도 false라서 판단 기준으로 쓰지 않는다.
-    map.getSource<maplibregl.GeoJSONSource>(RADIUS_SOURCE)?.setData(circlePolygon(location.lat, location.lng, radiusKm))
+    radius?.setData(circlePolygon(location.lat, location.lng, radiusKm))
 
     // 반경 원이 화면에 들어오도록 확대 수준을 맞춘다
-    const zoom = radiusKm <= 2 ? 13 : radiusKm <= 5 ? 12 : 11
+    const zoom = radiusKm <= 2 ? 13 : radiusKm <= 5 ? 12 : radiusKm <= 10 ? 11 : 10
     map.flyTo({ center: [location.lng, location.lat], zoom, speed: 1.4 })
   }, [location, radiusKm])
 
@@ -264,5 +292,34 @@ export default function IssueMap({
     map.flyTo({ center: [issue.lng, issue.lat], zoom: Math.max(map.getZoom(), 14), speed: 1.4 })
   }, [selectedId, issues])
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {/* 바람 입자 캔버스: 지도 위에 겹치되 마우스 조작은 지도로 넘긴다 */}
+      <canvas ref={windCanvasRef} className="pointer-events-none absolute inset-0" aria-hidden />
+    </div>
+  )
+}
+
+function addTemperatureLayer(map: maplibregl.Map, image: string, visible: boolean, beforeId: string | undefined) {
+  map.addSource(TEMPERATURE_LAYER, { type: 'image', url: image, coordinates: IMAGE_CORNERS })
+  map.addLayer(
+    {
+      id: TEMPERATURE_LAYER,
+      type: 'raster',
+      source: TEMPERATURE_LAYER,
+      layout: { visibility: visible ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 0.75, 'raster-resampling': 'linear', 'raster-fade-duration': 0 },
+    },
+    beforeId,
+  )
+}
+
+/** 땅·물 면(fill) 다음에 오는 첫 레이어 id. 그 앞에 넣으면 도로(line)·지명(symbol)보다 아래에 깔린다 */
+function belowRoads(map: maplibregl.Map): string | undefined {
+  const layers = map.getStyle().layers
+  const lastFill = layers.reduce((last, layer, i) => (layer.type === 'fill' && layer.id.startsWith('water') ? i : last), -1)
+  // 이미 넣은 위성사진·기온 면은 건너뛴다 → 나중에 넣는 기온 면이 위성사진 위에 온다
+  const next = layers.slice(lastFill + 1).find((l) => l.id !== SATELLITE_LAYER && l.id !== TEMPERATURE_LAYER)?.id
+  return lastFill >= 0 && next ? next : layers.find((l) => l.type === 'symbol')?.id
 }

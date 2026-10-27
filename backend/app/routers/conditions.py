@@ -1,10 +1,7 @@
-from concurrent.futures import ThreadPoolExecutor
-
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.cache import DataUnavailable
-from app.constants import DISTRICT_CENTERS
-from app.schemas import AirOut, AirStationOut, DistrictWeather, WeatherOut
+from app.schemas import AirOut, AirStationOut, WeatherGrid, WeatherOut
 
 router = APIRouter(tags=["weather"])
 
@@ -24,26 +21,16 @@ def weather(request: Request, lat: float = LAT, lng: float = LNG) -> WeatherOut:
         raise HTTPException(status_code=503, detail="날씨 정보를 일시적으로 불러올 수 없습니다.")
 
 
-@router.get("/weather/districts", response_model=list[DistrictWeather])
-def district_weather(request: Request) -> list[DistrictWeather]:
-    """지도 날씨·바람 레이어: 16개 구·군의 현재 날씨. 한 구가 실패해도 나머지는 돌려준다."""
+@router.get("/weather/grid", response_model=WeatherGrid)
+def weather_grid(request: Request) -> WeatherGrid:
+    """지도 기온·바람 레이어: 부산 일대 약 8km 격자의 기온과 바람 성분 (매시 갱신)."""
     provider = request.app.state.weather_provider
     if provider is None:
         raise HTTPException(status_code=503, detail="날씨 API 키가 설정되지 않았습니다.")
-
-    def fetch(item: tuple[str, tuple[float, float]]) -> DistrictWeather | None:
-        name, (lat, lng) = item
-        try:
-            return DistrictWeather(district=name, lat=lat, lng=lng, weather=provider.current(lat, lng))
-        except DataUnavailable:
-            return None
-
-    # 구마다 기상청을 두 번씩 부르므로 동시에 요청한다 (결과는 격자별로 10분 캐시)
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        result = [d for d in pool.map(fetch, DISTRICT_CENTERS.items()) if d]
-    if not result:
+    try:
+        return provider.grid()
+    except DataUnavailable:
         raise HTTPException(status_code=503, detail="날씨 정보를 일시적으로 불러올 수 없습니다.")
-    return result
 
 
 @router.get("/air/stations", response_model=list[AirStationOut])

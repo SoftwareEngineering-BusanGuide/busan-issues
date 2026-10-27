@@ -10,14 +10,25 @@ interface IssueListProps {
   category: string
   onCategoryChange: (category: string) => void
   onSelect: (id: number) => void
+  /** 부산 전체를 볼 때는 기준점과의 거리가 의미 없어 숨긴다 */
+  showDistance: boolean
 }
 
 /** UI-01 내 주변 이슈 목록 (FR-002) + 카테고리 필터 (FR-011) */
-export default function IssueList({ issues, now, loading, error, category, onCategoryChange, onSelect }: IssueListProps) {
+export default function IssueList({
+  issues,
+  now,
+  loading,
+  error,
+  category,
+  onCategoryChange,
+  onSelect,
+  showDistance,
+}: IssueListProps) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-4 pt-3">
-        <h2 className="text-sm font-bold">내 주변 이슈</h2>
+        <h2 className="text-sm font-bold">{showDistance ? '내 주변 이슈' : '부산 전체 이슈'}</h2>
         <span className="text-xs text-muted">{issues.length}건</span>
       </div>
 
@@ -59,7 +70,8 @@ export default function IssueList({ issues, now, loading, error, category, onCat
                     <h3 className="truncate text-sm font-semibold">{issue.title}</h3>
                     <p className="mt-0.5 truncate text-xs text-muted">{issue.place_name}</p>
                     <p className="mt-1 text-[11px] text-muted">
-                      {issue.category} · {formatDistance(issue.distance_km)} · {formatRelative(issue.updated_at, now)}
+                      {issue.category}
+                      {showDistance && ` · ${formatDistance(issue.distance_km)}`} · {formatRelative(issue.updated_at, now)}
                     </p>
                   </div>
                 </div>

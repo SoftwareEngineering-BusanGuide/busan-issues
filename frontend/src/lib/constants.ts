@@ -33,7 +33,18 @@ export const DISTRICTS: { name: string; lat: number; lng: number }[] = [
   { name: '기장군', lat: 35.2445, lng: 129.2222 },
 ]
 
-export const RADIUS_OPTIONS_KM = [2, 5, 10]
+export const RADIUS_OPTIONS_KM = [2, 5, 10, 20]
+export const DEFAULT_RADIUS_KM = 10
+
+/** '부산 전체'를 고르면 반경 대신 부산 전역을 본다 */
+export const WHOLE_CITY_LABEL = '부산 전체'
+export const WHOLE_CITY_RADIUS_KM = 50
+export const WHOLE_CITY_LOCATION: UserLocation = { lat: 35.17, lng: 129.07, label: WHOLE_CITY_LABEL, wholeCity: true }
+/** 부산 육지 전체가 보이는 범위 */
+export const BUSAN_LAND_BOUNDS: [[number, number], [number, number]] = [
+  [128.8, 35.02],
+  [129.32, 35.4],
+]
 
 /** 이슈 기간 (최근 며칠 안에 갱신된 이슈). 서버는 최근 4주치 기사까지 모은다 */
 export const PERIOD_OPTIONS = [
@@ -77,7 +88,7 @@ export function weatherIcon(precipitationType: string, sky: string | null): stri
 export const LAYER_OPTIONS: { key: keyof MapLayers; label: string; icon: string }[] = [
   { key: 'issues', label: '뉴스 이슈', icon: '📰' },
   { key: 'satellite', label: '위성사진', icon: '🛰️' },
-  { key: 'weather', label: '날씨', icon: '🌤️' },
+  { key: 'weather', label: '기온', icon: '🌡️' },
   { key: 'wind', label: '바람', icon: '💨' },
   { key: 'air', label: '미세먼지', icon: '😷' },
 ]
@@ -89,11 +100,11 @@ export const SATELLITE_TILES = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless
 export const SATELLITE_ATTRIBUTION =
   '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2020)'
 
-/** 풍속 색 (m/s). 14m/s 이상은 강풍주의보 수준 */
+/** 바람 입자 색 (m/s). 14m/s 이상은 강풍주의보 수준 */
 export function windColor(speed: number | null): string {
   if (speed == null) return '#8b98a8'
-  if (speed >= 14) return '#ef4444'
-  if (speed >= 9) return '#fb923c'
-  if (speed >= 4) return '#facc15'
-  return '#38bdf8'
+  if (speed >= 14) return '#f87171'
+  if (speed >= 9) return '#fde68a'
+  if (speed >= 4) return '#e0f2fe'
+  return '#7dd3fc'
 }

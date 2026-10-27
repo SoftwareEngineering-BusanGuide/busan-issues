@@ -1,4 +1,4 @@
-import { DISTRICTS, PERIOD_OPTIONS, RADIUS_OPTIONS_KM } from '../../lib/constants'
+import { DISTRICTS, PERIOD_OPTIONS, RADIUS_OPTIONS_KM, WHOLE_CITY_LABEL } from '../../lib/constants'
 import type { UserLocation } from '../../types'
 
 interface LocationControlProps {
@@ -23,7 +23,7 @@ export default function LocationControl({
   onRadiusChange,
   onPeriodChange,
 }: LocationControlProps) {
-  const selectedDistrict = DISTRICTS.find((d) => d.name === location.label)?.name ?? ''
+  const selectedDistrict = location.wholeCity ? WHOLE_CITY_LABEL : (DISTRICTS.find((d) => d.name === location.label)?.name ?? '')
 
   return (
     <div className="space-y-2 border-b border-line px-4 py-3">
@@ -46,6 +46,7 @@ export default function LocationControl({
           className="min-w-0 flex-1 rounded-md border border-line bg-card px-2 py-1.5 text-xs"
         >
           <option value="">구·군 선택</option>
+          <option value={WHOLE_CITY_LABEL}>{WHOLE_CITY_LABEL}</option>
           {DISTRICTS.map((d) => (
             <option key={d.name} value={d.name}>
               {d.name}
@@ -56,7 +57,9 @@ export default function LocationControl({
           value={radiusKm}
           onChange={(e) => onRadiusChange(Number(e.target.value))}
           aria-label="반경"
-          className="shrink-0 rounded-md border border-line bg-card px-2 py-1.5 text-xs"
+          disabled={location.wholeCity}
+          title={location.wholeCity ? '부산 전체를 볼 때는 반경을 쓰지 않습니다' : undefined}
+          className="shrink-0 rounded-md border border-line bg-card px-2 py-1.5 text-xs disabled:opacity-50"
         >
           {RADIUS_OPTIONS_KM.map((km) => (
             <option key={km} value={km}>
