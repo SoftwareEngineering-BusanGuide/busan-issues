@@ -22,19 +22,9 @@ def _provider(items: list[dict], status: int = 200, result_code: str = "00") -> 
     return SafetyDataAlertProvider("test-key", client=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-# ── 데모 제공자 (키가 없을 때) ──
-
-def test_demo_alerts_when_no_key(client: TestClient):
-    alerts = client.get("/api/alerts").json()
-    assert len(alerts) == 3
-    assert [a["issued_at"] for a in alerts] == sorted((a["issued_at"] for a in alerts), reverse=True)
-    assert all("데모" in a["source"] for a in alerts)
-
-
-def test_demo_alerts_filter_by_district(client: TestClient):
-    alerts = client.get("/api/alerts", params={"district": "사하구"}).json()
-    assert len(alerts) == 1 and "하단동" in alerts[0]["message"]
-    assert client.get("/api/alerts", params={"district": "없는구"}).json() == []
+def test_no_key_returns_503(client: TestClient):
+    res = client.get("/api/alerts")
+    assert res.status_code == 503 and "키" in res.json()["detail"]
 
 
 # ── 실제 API 응답 처리 ──

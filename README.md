@@ -118,7 +118,7 @@ cp .env.example .env
 
 > 각 모듈 구현 후 업데이트합니다.
 
-- **Backend (FastAPI):** [`backend/README.md`](backend/README.md) 참고. `cd backend && python -m app.seed && uvicorn app.main:app --reload`
+- **Backend (FastAPI):** [`backend/README.md`](backend/README.md) 참고. `cd backend && uvicorn app.main:app --reload` (시작하면 뉴스 수집이 자동으로 돕니다)
 - **Frontend (React):** [`frontend/README.md`](frontend/README.md) 참고. `cd frontend && npm install && npm run dev` → http://localhost:5173
 - **배포 (Vercel + Render):** [`docs/deployment.md`](docs/deployment.md) 참고.
 

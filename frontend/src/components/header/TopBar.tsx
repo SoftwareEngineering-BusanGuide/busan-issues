@@ -16,13 +16,6 @@ export default function TopBar({ now, weather, air }: TopBarProps) {
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" />
       </span>
       <h1 className="text-base font-bold whitespace-nowrap">부산 알리미</h1>
-      {/* 재난문자·날씨·대기질은 실제 데이터, 이슈는 아직 데모 */}
-      <span
-        className="hidden rounded border border-caution/50 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-caution sm:inline"
-        title="재난문자·날씨·미세먼지는 실시간 데이터이고, 지도 이슈는 뉴스 수집을 연결하기 전까지 데모 데이터입니다."
-      >
-        이슈 데모
-      </span>
 
       <div className="ml-auto flex items-center gap-4 text-sm">
         {weather && weather.temperature != null && (

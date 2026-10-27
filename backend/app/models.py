@@ -62,5 +62,7 @@ class Article(Base):
     # 같은 기사를 두 번 수집하지 않도록 원문 링크를 고유하게 둔다 (FR-008)
     url: Mapped[str] = mapped_column(String(1000), unique=True)
     published_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+    # 판별 상태: pending(판별 전) / relevant(부산 생활 이슈) / irrelevant(무관). 같은 기사를 다시 판별하지 않게 한다
+    triage: Mapped[str] = mapped_column(String(20), default="pending", index=True)
 
     issue: Mapped[Issue | None] = relationship(back_populates="articles")

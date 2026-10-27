@@ -2,6 +2,15 @@ import { categoryMeta } from '../../lib/constants'
 import { formatRelative } from '../../lib/format'
 import type { IssueDetail } from '../../types'
 
+/** 원문 링크의 언론사 주소 (예: news.kbs.co.kr) */
+function hostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
 interface IssueDetailViewProps {
   detail: IssueDetail | null
   error: string | null
@@ -52,10 +61,16 @@ export default function IssueDetailView({ detail, error, now, onBack }: IssueDet
                 <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline">
                   {a.title} ↗
                 </a>
+                <span className="ml-1 text-[11px] text-muted">{hostname(a.url)}</span>
                 <p className="mt-0.5 text-xs leading-relaxed text-foreground/75">{a.description}</p>
               </li>
             ))}
           </ol>
+          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+            이슈 제목과 상황 요약은 AI(Gemini)가 위 기사들의 제목·요약만으로 정리했습니다. 정확한 내용은 원문을 확인하세요.
+            <br />
+            기사 출처: 네이버 뉴스 검색 (NAVER API HUB)
+          </p>
         </div>
       )}
     </section>

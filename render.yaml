@@ -9,8 +9,9 @@ services:
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    # 무료 플랜은 디스크가 유지되지 않아 재시작마다 SQLite가 비므로, 시작할 때 데모 이슈를 넣는다
-    startCommand: python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # 서버가 시작되면 뉴스 수집 파이프라인이 바로 한 번 돌고, 이후 30분마다 돈다.
+    # 무료 플랜은 디스크가 유지되지 않아 재시작마다 DB가 비고, 시작 후 1~2분 안에 다시 채워진다.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
