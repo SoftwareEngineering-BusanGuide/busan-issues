@@ -92,34 +92,7 @@ body {
   }
 }
 
-/* ── 지도 레이어: 날씨·바람·미세먼지 ── */
-.weather-marker,
-.wind-marker,
-.air-marker {
-  pointer-events: auto;
-  cursor: default;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-foreground);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.8);
-}
-.weather-marker {
-  border-radius: 9999px;
-  border: 1px solid var(--color-line);
-  background: rgb(17 22 29 / 0.85);
-  padding: 2px 7px;
-}
-.wind-marker {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  color: var(--wind-color);
-}
-.wind-marker span {
-  color: var(--color-foreground);
-  font-size: 10px;
-}
+/* ── 지도 레이어: 미세먼지 측정소 ── */
 .air-marker {
   display: flex;
   height: 26px;
@@ -131,4 +104,30 @@ body {
   background: color-mix(in srgb, var(--air-color) 35%, rgb(17 22 29 / 0.85));
   padding: 0 4px;
   font-size: 10px;
+  font-weight: 700;
+  color: var(--color-foreground);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.8);
+  white-space: nowrap;
+}
+
+/* ── 기준 위치 날씨 말풍선 (기온·바람 레이어) ── */
+.weather-bubble {
+  display: flex;
+  min-width: 64px;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 9999px;
+  border: 3px solid var(--color-accent);
+  background: #fff;
+  padding: 8px 12px;
+  color: #0b0f14;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35);
+  line-height: 1.1;
+}
+.weather-bubble strong {
+  font-size: 22px;
+}
+.weather-bubble span {
+  font-size: 11px;
+  color: #475569;
 }

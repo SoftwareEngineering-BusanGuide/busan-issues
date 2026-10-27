@@ -3,11 +3,11 @@ import {
   fetchAir,
   fetchAirStations,
   fetchAlerts,
-  fetchDistrictWeather,
   fetchIssueDetail,
   fetchNearbyIssues,
   fetchTopIssues,
   fetchWeather,
+  fetchWeatherGrid,
 } from './api/client'
 import TopBar from './components/header/TopBar'
 import TopIssues from './components/header/TopIssues'
@@ -17,18 +17,27 @@ import IssueDetailView from './components/panel/IssueDetailView'
 import IssueList from './components/panel/IssueList'
 import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
-import { DEFAULT_LAYERS, DEFAULT_LOCATION, DEFAULT_PERIOD_DAYS, DISTRICTS, RADIUS_OPTIONS_KM } from './lib/constants'
+import {
+  DEFAULT_LAYERS,
+  DEFAULT_LOCATION,
+  DEFAULT_PERIOD_DAYS,
+  DEFAULT_RADIUS_KM,
+  DISTRICTS,
+  WHOLE_CITY_LABEL,
+  WHOLE_CITY_LOCATION,
+  WHOLE_CITY_RADIUS_KM,
+} from './lib/constants'
 import { isInBusan } from './lib/geo'
 import type {
   AirNow,
   AirStation,
   Alert,
-  DistrictWeather,
   IssueDetail,
   IssueSummary,
   MapLayers,
   NearbyIssue,
   UserLocation,
+  WeatherGrid,
   WeatherNow,
 } from './types'
 
@@ -73,7 +82,7 @@ interface DetailResult {
 export default function App() {
   const [now, setNow] = useState(() => Date.now())
   const [location, setLocation] = useState<UserLocation>(DEFAULT_LOCATION)
-  const [radiusKm, setRadiusKm] = useState(RADIUS_OPTIONS_KM[0])
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM)
   const [category, setCategory] = useState('')
   const [periodDays, setPeriodDays] = useState(DEFAULT_PERIOD_DAYS)
   // 접속하자마자 위치를 요청하므로 처음부터 '확인 중' 상태로 시작한다
@@ -89,7 +98,7 @@ export default function App() {
 
   // 지도 레이어
   const [layers, setLayers] = useState<MapLayers>(loadLayers)
-  const [districtWeather, setDistrictWeather] = useState<DistrictWeather[]>([])
+  const [weatherGrid, setWeatherGrid] = useState<WeatherGrid | null>(null)
   const [airStations, setAirStations] = useState<AirStation[]>([])
   const [layerErrors, setLayerErrors] = useState<Partial<Record<keyof MapLayers, boolean>>>({})
   const toggleLayer = (key: keyof MapLayers) =>
@@ -143,23 +152,29 @@ export default function App() {
   }
 
   const selectDistrict = (name: string) => {
+    if (name === WHOLE_CITY_LABEL) {
+      setLocation(WHOLE_CITY_LOCATION)
+      setNotice(null)
+      return
+    }
     const d = DISTRICTS.find((x) => x.name === name)
     if (!d) return
     setLocation({ lat: d.lat, lng: d.lng, label: d.name })
     setNotice(null)
   }
 
-  // API-002 내 주변 이슈
-  const nearbyKey = `${location.lat},${location.lng},${radiusKm},${periodDays},${category}`
+  // API-002 내 주변 이슈 ('부산 전체'면 반경 대신 부산 전역)
+  const searchRadius = location.wholeCity ? WHOLE_CITY_RADIUS_KM : radiusKm
+  const nearbyKey = `${location.lat},${location.lng},${searchRadius},${periodDays},${category}`
   useEffect(() => {
     let ignore = false
-    fetchNearbyIssues(location.lat, location.lng, radiusKm, periodDays, category || undefined)
+    fetchNearbyIssues(location.lat, location.lng, searchRadius, periodDays, category || undefined)
       .then((data) => !ignore && setNearbyResult({ key: nearbyKey, data, error: null }))
       .catch(() => !ignore && setNearbyResult({ key: nearbyKey, data: [], error: SERVER_ERROR }))
     return () => {
       ignore = true
     }
-  }, [nearbyKey, location.lat, location.lng, radiusKm, periodDays, category, now])
+  }, [nearbyKey, location.lat, location.lng, searchRadius, periodDays, category, now])
   const nearby = nearbyResult.data
   const nearbyLoading = nearbyResult.key !== nearbyKey
 
@@ -189,22 +204,22 @@ export default function App() {
     }
   }, [now])
 
-  // 날씨·바람 레이어 데이터 (둘 중 하나라도 켜져 있을 때만)
-  const needDistrictWeather = layers.weather || layers.wind
+  // 기온·바람 레이어 데이터: 부산 격자 실황 (둘 중 하나라도 켜져 있을 때만, 서버는 매시 한 번 갱신)
+  const needWeatherGrid = layers.weather || layers.wind
   useEffect(() => {
-    if (!needDistrictWeather) return
+    if (!needWeatherGrid) return
     let ignore = false
-    fetchDistrictWeather()
+    fetchWeatherGrid()
       .then((data) => {
         if (ignore) return
-        setDistrictWeather(data)
+        setWeatherGrid(data)
         setLayerErrors((e) => ({ ...e, weather: false, wind: false }))
       })
       .catch(() => !ignore && setLayerErrors((e) => ({ ...e, weather: true, wind: true })))
     return () => {
       ignore = true
     }
-  }, [needDistrictWeather, now])
+  }, [needWeatherGrid, now])
 
   // 미세먼지 레이어 데이터
   useEffect(() => {
@@ -273,10 +288,16 @@ export default function App() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             layers={layers}
-            districtWeather={districtWeather}
+            weatherGrid={weatherGrid}
+            weather={weather}
             airStations={airStations}
           />
-          <LayerControl layers={layers} onToggle={toggleLayer} unavailable={layerErrors} />
+          <LayerControl
+            layers={layers}
+            onToggle={toggleLayer}
+            unavailable={layerErrors}
+            observedAt={weatherGrid?.observed_at ?? null}
+          />
           {notice && (
             <div className="absolute top-14 right-3 left-14 z-10 flex items-start md:top-3 md:right-auto md:left-1/2 md:w-[400px] md:-translate-x-1/2 gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg">
               <span className="flex-1">{notice}</span>
@@ -307,6 +328,7 @@ export default function App() {
               category={category}
               onCategoryChange={setCategory}
               onSelect={setSelectedId}
+              showDistance={!location.wholeCity}
             />
           ) : (
             <IssueDetailView detail={detail} error={detailError} now={now} onBack={() => setSelectedId(null)} />

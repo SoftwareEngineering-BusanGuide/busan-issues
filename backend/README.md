@@ -114,7 +114,7 @@ backend/
 | API ID | Endpoint | 상태 |
 |---|---|---|
 | API-001 | `GET /api/health` | ✅ |
-| API-002 | `GET /api/issues/nearby` | ✅ (`days`: 최근 며칠, 기본 7) |
+| API-002 | `GET /api/issues/nearby` | ✅ (`radius` 기본 10km·최대 50km, `days` 기본 7) |
 | API-003 | `GET /api/issues/top` | ✅ (`days`: 최근 며칠, 기본 7) |
 | API-004 | `GET /api/issues/{id}` | ✅ (기사 시간순 포함) |
 | API-005 | `GET /api/issues/{id}/timeline` | ⏳ |
@@ -122,6 +122,6 @@ backend/
 | API-007 | `GET /api/alerts` | ✅ 실시간 |
 | (추가) | `GET /api/weather?lat&lng` | ✅ 기상청 실시간 |
 | (추가) | `GET /api/air?lat&lng` | ✅ 에어코리아 실시간 |
-| (추가) | `GET /api/weather/districts` | ✅ 지도 날씨·바람 레이어: 16개 구·군 현재 날씨 (풍향 포함) |
+| (추가) | `GET /api/weather/grid` | ✅ 지도 기온·바람 레이어: 부산 일대 약 8km 격자(72칸) 기온·바람 성분, 매시 한 번 갱신 |
 | (추가) | `GET /api/air/stations` | ✅ 지도 미세먼지 레이어: 측정소별 실시간 값 |
 | (추가) | `GET /api/pipeline/status` | ✅ 뉴스 수집 상태 (키 값은 내보내지 않음) |

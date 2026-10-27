@@ -59,11 +59,17 @@ export interface WeatherNow {
   source: string
 }
 
-export interface DistrictWeather {
-  district: string
-  lat: number
-  lng: number
-  weather: WeatherNow
+/** 지도 기온·바람 레이어용 부산 일대 격자 실황. [위도 행][경도 열], 관측 없는 칸은 null */
+export interface WeatherGrid {
+  lats: number[]
+  lngs: number[]
+  temperature: (number | null)[][]
+  /** 동서 바람 성분 (m/s, 동쪽 +) */
+  u: (number | null)[][]
+  /** 남북 바람 성분 (m/s, 북쪽 +) */
+  v: (number | null)[][]
+  observed_at: string
+  source: string
 }
 
 export interface AirStation {
@@ -106,4 +112,6 @@ export interface UserLocation {
   lng: number
   /** 화면에 보여줄 위치 이름 (예: 해운대구, 현재 위치) */
   label: string
+  /** '부산 전체'를 고른 경우: 반경 대신 부산 전역 */
+  wholeCity?: boolean
 }

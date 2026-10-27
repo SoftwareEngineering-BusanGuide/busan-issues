@@ -38,21 +38,26 @@ def seeded(client: TestClient) -> TestClient:
     return client
 
 
-def test_nearby_default_radius_is_2km(seeded: TestClient):
+def test_nearby_default_radius_is_10km(seeded: TestClient):
     res = seeded.get("/api/issues/nearby", params=CITY_HALL)
     assert res.status_code == 200
     issues = res.json()
     titles = {i["title"] for i in issues}
-    assert "시청 앞 중앙대로 행사 교통 통제" in titles
-    assert "서면 상가 건물 화재" not in titles  # 약 2.6km
-    assert all(i["distance_km"] <= 2 for i in issues)
+    assert "서면 상가 건물 화재" in titles  # 약 2.6km
+    assert "하단동 도로 싱크홀" not in titles  # 약 12km
+    assert all(i["distance_km"] <= 10 for i in issues)
     # 최신순
     assert [i["updated_at"] for i in issues] == sorted((i["updated_at"] for i in issues), reverse=True)
 
 
+def test_nearby_whole_busan_with_max_radius(seeded: TestClient):
+    titles = {i["title"] for i in seeded.get("/api/issues/nearby", params={**CITY_HALL, "radius": 50}).json()}
+    assert "하단동 도로 싱크홀" in titles
+
+
 def test_nearby_wider_radius_and_category(seeded: TestClient):
-    wide = seeded.get("/api/issues/nearby", params={**CITY_HALL, "radius": 5}).json()
-    assert "서면 상가 건물 화재" in {i["title"] for i in wide}
+    narrow = seeded.get("/api/issues/nearby", params={**CITY_HALL, "radius": 2}).json()
+    assert "서면 상가 건물 화재" not in {i["title"] for i in narrow}
 
     only_work = seeded.get("/api/issues/nearby", params={**CITY_HALL, "category": "공사·생활"}).json()
     assert only_work and all(i["category"] == "공사·생활" for i in only_work)

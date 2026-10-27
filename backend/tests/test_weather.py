@@ -81,24 +81,71 @@ def test_provider_reads_wind_direction():
     assert (w.wind_direction, w.wind_speed) == (228, 3.5)
 
 
-class _DistrictProvider:
-    """구 이름(좌표)에 따라 날씨를 주고, 사하구 좌표에서는 실패하는 가짜 제공자."""
+def _grid_provider(counter: list[int], fail: bool = False) -> KmaWeatherProvider:
+    """nx가 클수록 따뜻하고, 가장 남쪽 줄(ny 70 이하, 바다)이면 결측값(-999)을 주는 가짜 기상청."""
 
-    def current(self, lat: float, lng: float):
-        from app.cache import DataUnavailable
-        from app.schemas import WeatherOut
+    def handler(request: httpx.Request) -> httpx.Response:
+        counter.append(1)
+        if fail:
+            return httpx.Response(500)
+        nx, ny = int(request.url.params["nx"]), int(request.url.params["ny"])
+        missing = ny <= 70
+        return httpx.Response(200, json=_kma_response([
+            {"category": "T1H", "obsrValue": "-999" if missing else str(nx / 10)},
+            {"category": "UUU", "obsrValue": "-998.9" if missing else "1.5"},
+            {"category": "VVV", "obsrValue": "-998.9" if missing else "-2"},
+        ]))
 
-        if (lat, lng) == (35.1046, 128.9748):  # 사하구
-            raise DataUnavailable("down")
-        return WeatherOut(temperature=round(lat, 2), humidity=50, precipitation_1h=0, precipitation_type="없음",
-                          sky="맑음", wind_speed=2, wind_direction=90, observed_at=datetime(2026, 10, 27, 12, tzinfo=KST),
-                          source="test")
+    return KmaWeatherProvider("k", client=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-def test_district_weather_returns_all_districts_except_failed(client: TestClient):
-    assert client.get("/api/weather/districts").status_code == 503  # 키 없음
-    client.app.state.weather_provider = _DistrictProvider()
-    body = client.get("/api/weather/districts").json()
-    names = {d["district"] for d in body}
-    assert len(body) == 15 and "사하구" not in names and "해운대구" in names
-    assert body[0]["weather"]["wind_direction"] == 90
+def test_grid_shape_values_and_missing_sea_cells():
+    from app.weather import GRID_LATS, GRID_LNGS
+
+    counter: list[int] = []
+    grid = _grid_provider(counter).grid()
+    assert len(grid.temperature) == len(GRID_LATS) and len(grid.temperature[0]) == len(GRID_LNGS)
+    assert grid.lats == sorted(grid.lats) and grid.lngs == sorted(grid.lngs)
+    # 남서쪽 끝(바다)은 결측 → None, 북쪽 칸은 값이 있다
+    assert grid.temperature[0][-1] is None and grid.u[0][-1] is None
+    assert grid.temperature[-1][0] is not None and (grid.u[-1][0], grid.v[-1][0]) == (1.5, -2)
+    # 동쪽으로 갈수록 nx가 커져 기온이 높다
+    assert grid.temperature[-1][-1] > grid.temperature[-1][0]
+    assert len(counter) == len(GRID_LATS) * len(GRID_LNGS)
+
+
+def test_grid_is_fetched_once_per_base_time(monkeypatch):
+    import app.weather as weather
+
+    base = datetime(2026, 10, 27, 12, tzinfo=KST)
+    monkeypatch.setattr(weather, "base_times", lambda now: (base, base))
+    counter: list[int] = []
+    provider = _grid_provider(counter)
+    provider.grid()
+    first = len(counter)
+    provider.grid()
+    assert len(counter) == first  # 같은 발표 시각이면 다시 받지 않는다
+
+
+def test_grid_falls_back_to_previous_hour_when_new_fetch_fails(monkeypatch):
+    import app.weather as weather
+
+    bases = iter([datetime(2026, 10, 27, 12, tzinfo=KST), datetime(2026, 10, 27, 13, tzinfo=KST)])
+    current = {}
+    monkeypatch.setattr(weather, "base_times", lambda now: (current["b"], current["b"]))
+    counter: list[int] = []
+    provider = _grid_provider(counter)
+    current["b"] = next(bases)
+    previous = provider.grid()
+    # 13시 자료는 모두 실패 → 12시 격자를 그대로 보여준다
+    provider._client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500)))
+    current["b"] = next(bases)
+    assert provider.grid().observed_at == previous.observed_at
+
+
+def test_grid_endpoint(client: TestClient):
+    assert client.get("/api/weather/grid").status_code == 503  # 키 없음
+    client.app.state.weather_provider = _grid_provider([])
+    body = client.get("/api/weather/grid").json()
+    assert set(body) >= {"lats", "lngs", "temperature", "u", "v", "observed_at", "source"}
+    assert client.get("/api/weather/districts").status_code == 404  # 격자 API로 바뀜

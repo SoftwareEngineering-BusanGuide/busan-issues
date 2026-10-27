@@ -1,16 +1,25 @@
 import { useState } from 'react'
 import { AIR_GRADE_COLOR, LAYER_OPTIONS, windColor } from '../../lib/constants'
+import { formatClock } from '../../lib/format'
+import { temperatureColor } from '../../lib/weatherField'
 import type { MapLayers } from '../../types'
+
+/** 범례용 기온 그라데이션 (-10 ~ 35℃, 부산에서 흔한 범위) */
+const TEMPERATURE_GRADIENT = `linear-gradient(to right, ${[-10, 0, 10, 20, 30, 35]
+  .map((t, i, all) => `rgb(${temperatureColor(t).join(',')}) ${(i / (all.length - 1)) * 100}%`)
+  .join(', ')})`
 
 interface LayerControlProps {
   layers: MapLayers
   onToggle: (key: keyof MapLayers) => void
   /** 레이어 데이터를 불러오지 못한 경우 (예: 키 없음, 외부 API 장애) */
   unavailable: Partial<Record<keyof MapLayers, boolean>>
+  /** 기온·바람 격자의 관측 시각 */
+  observedAt: string | null
 }
 
 /** 지도 오른쪽 위 레이어 패널: 뉴스 이슈·위성사진·날씨·바람·미세먼지를 켜고 끈다 */
-export default function LayerControl({ layers, onToggle, unavailable }: LayerControlProps) {
+export default function LayerControl({ layers, onToggle, unavailable, observedAt }: LayerControlProps) {
   const [open, setOpen] = useState(false)
   const activeCount = LAYER_OPTIONS.filter((l) => l.key !== 'issues' && layers[l.key]).length
 
@@ -50,18 +59,33 @@ export default function LayerControl({ layers, onToggle, unavailable }: LayerCon
               </div>
             </div>
           )}
+          {layers.weather && (
+            <div className="mt-1 border-t border-line px-2 pt-2">
+              <p className="mb-1 text-[10px] text-muted">기온 (℃)</p>
+              <div className="h-2 rounded-full" style={{ background: TEMPERATURE_GRADIENT }} />
+              <div className="mt-0.5 flex justify-between text-[10px] text-muted">
+                <span>-10</span>
+                <span>0</span>
+                <span>10</span>
+                <span>20</span>
+                <span>30+</span>
+              </div>
+            </div>
+          )}
           {layers.wind && (
             <div className="mt-1 border-t border-line px-2 pt-2">
-              <p className="mb-1 text-[10px] text-muted">풍속 (화살표: 바람이 불어 가는 방향)</p>
+              <p className="mb-1 text-[10px] text-muted">바람 (m/s, 입자가 흐르는 방향)</p>
               <div className="flex flex-wrap gap-x-2 gap-y-1">
-                {[
-                  ['4 미만', 0],
-                  ['4~9', 4],
-                  ['9~14', 9],
-                  ['14 이상', 14],
-                ].map(([label, speed]) => (
+                {(
+                  [
+                    ['4 미만', 0],
+                    ['4~9', 4],
+                    ['9~14', 9],
+                    ['14 이상', 14],
+                  ] as const
+                ).map(([label, speed]) => (
                   <span key={label} className="flex items-center gap-1 text-[10px]">
-                    <span className="h-2 w-2 rounded-full" style={{ background: windColor(Number(speed)) }} />
+                    <span className="h-2 w-2 rounded-full" style={{ background: windColor(speed) }} />
                     {label}
                   </span>
                 ))}
@@ -69,7 +93,9 @@ export default function LayerControl({ layers, onToggle, unavailable }: LayerCon
             </div>
           )}
           {(layers.weather || layers.wind) && (
-            <p className="mt-1 px-2 text-[10px] text-muted">날씨·바람: 기상청 초단기실황 (5km 격자)</p>
+            <p className="mt-1 px-2 text-[10px] leading-relaxed text-muted">
+              기상청 초단기실황 약 8km 격자{observedAt ? ` · ${formatClock(observedAt)} 기준` : ''}. 바다는 관측이 없어 주변 육지 값으로 채웠습니다.
+            </p>
           )}
         </div>
       )}
