@@ -22,10 +22,14 @@ interface Particle {
 export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElement, grid: FilledGrid): () => void {
   const ctx = canvas.getContext('2d')!
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const dpr = window.devicePixelRatio || 1
+  // 고해상도 화면에서도 2배까지만 그려 성능을 지킨다
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
   let particles: Particle[] = []
   let frame = 0
   let stopped = false
+  // 지도를 끌거나 확대하는 동안에는 그리지 않는다. 화면 좌표로 남은 꼬리가 끄는 방향으로 번져
+  // 바람 방향이 바뀐 것처럼 보이기 때문이다. 움직임이 끝나면 새 화면에서 다시 시작한다.
+  let moving = false
 
   const velocity = (lng: number, lat: number) => ({
     u: sample(grid.u, grid.lats, grid.lngs, lat, lng),
@@ -58,7 +62,7 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
     particles = Array.from({ length: count }, () => spawn())
     // 처음부터 나이를 흩어 놓아 한꺼번에 사라졌다 생기지 않게 한다
     particles.forEach((p) => (p.age = Math.floor(Math.random() * p.maxAge)))
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    clear()
   }
 
   const drawSegment = (p: Particle, length: number) => {
@@ -78,6 +82,10 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
 
   const step = () => {
     if (stopped) return
+    if (moving) {
+      frame = requestAnimationFrame(step)
+      return
+    }
     // 이전 프레임을 조금씩 지워 꼬리가 남게 한다
     ctx.globalCompositeOperation = 'destination-in'
     ctx.fillStyle = `rgba(0, 0, 0, ${FADE})`
@@ -107,7 +115,7 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
   // 움직임 줄이기: 애니메이션 없이 흐름선만 한 번
   const drawStatic = () => {
     resize()
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    clear()
     ctx.lineWidth = 1.2
     ctx.globalAlpha = 0.8
     const { clientWidth: w, clientHeight: h } = map.getContainer()
@@ -115,11 +123,24 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
     for (let i = 0; i < count; i++) drawSegment(spawn(), 15)
   }
 
-  // 지도를 움직이는 동안 이전 꼬리가 엉뚱한 곳에 남지 않도록 지운다
-  const clear = () => ctx.clearRect(0, 0, canvas.width, canvas.height)
-  const onMoveEnd = () => (reduceMotion ? drawStatic() : reset())
+  const clear = () => {
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.restore()
+  }
+  const onMoveStart = () => {
+    moving = true
+    clear()
+  }
+  const onMoveEnd = () => {
+    moving = false
+    if (reduceMotion) drawStatic()
+    else reset()
+  }
 
-  map.on('movestart', clear)
+  map.on('movestart', onMoveStart)
+  map.on('move', clear)
   map.on('moveend', onMoveEnd)
   map.on('resize', onMoveEnd)
   if (reduceMotion) {
@@ -132,9 +153,10 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
   return () => {
     stopped = true
     cancelAnimationFrame(frame)
-    map.off('movestart', clear)
+    map.off('movestart', onMoveStart)
+    map.off('move', clear)
     map.off('moveend', onMoveEnd)
     map.off('resize', onMoveEnd)
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    clear()
   }
 }
