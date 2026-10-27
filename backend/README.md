@@ -44,6 +44,8 @@ uvicorn app.main:app --reload
 4. **장소 → 좌표:** 네이버 지역 검색으로 찾고, 못 찾으면 "인근"·"도로" 같은 말을 빼고 뒤에서부터 줄여 다시 찾습니다. 그래도 없으면 구·군청 좌표를 씁니다. "부산" 전체를 뜻하는 이슈는 지도에 찍지 않습니다.
 5. **상황 요약:** 기사가 2건 이상인 이슈는 기사 제목·요약만 근거로 현재 상황을 요약합니다. (AI-REQ-03)
 
+수집 상태는 `GET /api/pipeline/status`로 확인합니다. 키가 설정됐는지(값은 보이지 않음), 지금 몇 번째 실행의 어느 단계인지, 마지막 실행 결과와 오류, DB에 쌓인 기사·이슈 수를 보여줍니다.
+
 직접 한 번 돌리려면:
 
 ```bash
@@ -102,7 +104,8 @@ backend/
 │       ├── health.py  # API-001
 │       ├── issues.py  # API-002, 003, 004
 │       ├── alerts.py  # API-007
-│       └── conditions.py  # 날씨·미세먼지
+│       ├── conditions.py  # 날씨·미세먼지
+│       └── pipeline.py    # 수집 상태 확인
 └── tests/
 ```
 
@@ -119,3 +122,4 @@ backend/
 | API-007 | `GET /api/alerts` | ✅ 실시간 |
 | (추가) | `GET /api/weather?lat&lng` | ✅ 기상청 실시간 |
 | (추가) | `GET /api/air?lat&lng` | ✅ 에어코리아 실시간 |
+| (추가) | `GET /api/pipeline/status` | ✅ 뉴스 수집 상태 (키 값은 내보내지 않음) |

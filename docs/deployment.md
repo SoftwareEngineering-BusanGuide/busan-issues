@@ -35,6 +35,18 @@
 
 API 키는 Vercel에는 넣지 않습니다. 화면은 키 없이 서버만 호출합니다.
 
+## 이슈가 안 보일 때
+
+브라우저에서 `https://busan-alimi-api.onrender.com/api/pipeline/status`를 열어 봅니다. (키 값은 표시되지 않습니다)
+
+| 보이는 값 | 뜻 | 할 일 |
+|---|---|---|
+| `ready: false`, `keys_configured`에 false가 있음 | 수집에 필요한 키가 없어 수집을 시작하지 않음 | Render Environment에서 그 키의 **이름**을 확인 (`NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`, `GEMINI_API_KEY`) |
+| `running: true`, `stage: classify` 등 | 지금 수집 중 (처음 실행은 몇 분 걸림) | 기다리기 |
+| `last_error`에 내용이 있음 | 실행 전체가 실패함 | 오류 내용을 보고 원인 확인 |
+| `last_stats.errors`에 내용이 있음 | 일부 단계(판별·묶기·요약)가 실패함. 다음 실행에서 다시 처리 | Gemini 한도·오류 확인 |
+| `runs: 0`, `scheduler_alive: false`, `ready: true` | 스케줄러가 시작되지 않음 | 서버 로그 확인 |
+
 ## 무료 플랜에서 알아둘 점
 
 - **서버가 잠듭니다:** Render 무료 서버는 15분 동안 요청이 없으면 잠들고, 다시 깨어나는 데 1분 정도 걸립니다. 그동안 화면에 "서버에 연결할 수 없습니다"가 잠깐 보일 수 있고, 1분마다 다시 불러오므로 서버가 깨면 자동으로 채워집니다. 발표나 시연 직전에는 `/api/health`를 한 번 열어 미리 깨워 두세요.
