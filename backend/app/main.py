@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,7 +11,7 @@ from app.alerts import SafetyDataAlertProvider
 from app.config import Settings, settings as default_settings
 from app.db import Database
 from app.pipeline import PipelineScheduler, build_pipeline
-from app.routers import alerts, conditions, health, issues
+from app.routers import alerts, conditions, health, issues, pipeline
 from app.weather import KmaWeatherProvider
 
 # 뉴스 파이프라인 진행 로그를 서버 로그에서 볼 수 있게 한다
@@ -29,7 +30,9 @@ def create_app(database_url: str | None = None, app_settings: Settings | None = 
         scheduler = None
         if cfg.pipeline_ready:
             # 시작하자마자 한 번, 이후 일정 간격으로 뉴스를 모아 이슈를 만든다 (FR-008 ~ FR-010)
-            scheduler = PipelineScheduler(build_pipeline(db, cfg), cfg.pipeline_interval_minutes)
+            app.state.pipeline = build_pipeline(db, cfg)
+            scheduler = PipelineScheduler(app.state.pipeline, cfg.pipeline_interval_minutes)
+            app.state.scheduler = scheduler
             scheduler.start()
         yield
         if scheduler:
@@ -38,6 +41,10 @@ def create_app(database_url: str | None = None, app_settings: Settings | None = 
 
     app = FastAPI(title="부산 알리미 API", version="0.2.0", lifespan=lifespan)
     app.state.db = db
+    app.state.settings = cfg
+    app.state.started_at = datetime.now(timezone.utc)
+    app.state.pipeline = None  # 키가 모두 있으면 시작할 때 만든다
+    app.state.scheduler = None
     # 키가 없으면 해당 기능은 None → 503 (화면에서 숨김)
     app.state.alert_provider = SafetyDataAlertProvider(cfg.safety_data_api_key) if cfg.safety_data_api_key else None
     app.state.weather_provider = KmaWeatherProvider(cfg.data_go_kr_api_key) if cfg.data_go_kr_api_key else None
@@ -49,7 +56,7 @@ def create_app(database_url: str | None = None, app_settings: Settings | None = 
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
-    for router in (health.router, issues.router, alerts.router, conditions.router):
+    for router in (health.router, issues.router, alerts.router, conditions.router, pipeline.router):
         app.include_router(router, prefix="/api")
     return app
 

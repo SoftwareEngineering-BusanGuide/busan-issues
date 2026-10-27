@@ -33,6 +33,19 @@ class PipelineStats:
     errors: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RunStatus:
+    """상태 API(/api/pipeline/status)로 보여줄 실행 상태. 키 값은 담지 않는다."""
+
+    runs: int = 0
+    running: bool = False
+    stage: str | None = None  # collect / classify / group / summarize
+    last_started_at: datetime | None = None
+    last_finished_at: datetime | None = None
+    last_stats: PipelineStats | None = None
+    last_error: str | None = None  # 실행 전체가 실패한 경우 (예외 종류: 메시지)
+
+
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]
@@ -61,21 +74,38 @@ class NewsPipeline:
         self._match_window = timedelta(days=match_window_days)
         self._summary_limit = summary_limit
         self._lock = threading.Lock()
+        self.status = RunStatus()
 
     def run(self) -> PipelineStats | None:
         """한 번 실행한다. 이미 실행 중이면 None (스케줄러와 수동 실행이 겹치지 않게)."""
         if not self._lock.acquire(blocking=False):
             return None
+        status = self.status
+        status.runs += 1
+        status.running = True
+        status.last_started_at = datetime.now(timezone.utc)
+        status.last_error = None
+        stats = PipelineStats()
+        status.last_stats = stats  # 실행 중에도 진행 상황이 보이도록 같은 객체를 갱신한다
         try:
-            stats = PipelineStats()
             with self._db.session_factory() as session:
+                status.stage = "collect"
                 stats.collected = collect_news(session, self._naver, self._now(), self._max_age_days)
+                status.stage = "classify"
                 relevant = self._classify(session, stats)
+                status.stage = "group"
                 changed = self._group(session, relevant, stats)
+                status.stage = "summarize"
                 self._summarize(session, changed, stats)
             log.info("뉴스 파이프라인 완료: %s", stats)
             return stats
+        except Exception as e:
+            status.last_error = f"{type(e).__name__} ({status.stage} 단계): {e}"
+            raise
         finally:
+            status.running = False
+            status.stage = None
+            status.last_finished_at = datetime.now(timezone.utc)
             self._lock.release()
 
     # ── 판별·분류 ──
@@ -224,6 +254,14 @@ class PipelineScheduler:
 
     def start(self) -> None:
         self._thread.start()
+
+    @property
+    def alive(self) -> bool:
+        return self._thread.is_alive()
+
+    @property
+    def interval_minutes(self) -> int:
+        return self._interval // 60
 
     def stop(self) -> None:
         self._stop.set()
