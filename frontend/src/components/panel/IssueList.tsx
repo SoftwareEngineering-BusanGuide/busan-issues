@@ -12,6 +12,8 @@ interface IssueListProps {
   onSelect: (id: number) => void
   /** 부산 전체를 볼 때는 기준점과의 거리가 의미 없어 숨긴다 */
   showDistance: boolean
+  /** 모바일 바텀시트에서는 시트 제목 줄이 대신하므로 숨긴다 */
+  showHeader?: boolean
 }
 
 /** UI-01 내 주변 이슈 목록 (FR-002) + 카테고리 필터 (FR-011) */
@@ -24,13 +26,16 @@ export default function IssueList({
   onCategoryChange,
   onSelect,
   showDistance,
+  showHeader = true,
 }: IssueListProps) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between px-4 pt-3">
-        <h2 className="text-sm font-bold">{showDistance ? '내 주변 이슈' : '부산 전체 이슈'}</h2>
-        <span className="text-xs text-muted">{issues.length}건</span>
-      </div>
+      {showHeader && (
+        <div className="flex items-center justify-between px-4 pt-3">
+          <h2 className="text-sm font-bold">{showDistance ? '내 주변 이슈' : '부산 전체 이슈'}</h2>
+          <span className="text-xs text-muted">{issues.length}건</span>
+        </div>
+      )}
 
       <div className="flex gap-1.5 overflow-x-auto px-4 py-2">
         {['', ...Object.keys(CATEGORY_META)].map((c) => (
