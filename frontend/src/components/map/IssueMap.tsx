@@ -12,6 +12,7 @@ import {
   categoryMeta,
 } from '../../lib/constants'
 import { circlePolygon } from '../../lib/geo'
+import { VIEWPORT_EVENT } from '../../lib/viewport'
 import { fillGrid, renderTemperatureImage, windDirectionName } from '../../lib/weatherField'
 import type { AirStation, IssueSummary, MapLayers, UserLocation, WeatherGrid, WeatherNow } from '../../types'
 import { startWindParticles } from './windParticles'
@@ -27,6 +28,8 @@ interface IssueMapProps {
   airStations: AirStation[]
   /** 기준 위치의 현재 날씨 (기온·바람 레이어를 켜면 말풍선으로 보여준다) */
   weather: WeatherNow | null
+  /** 지도 아래쪽을 덮는 패널(모바일 바텀시트)의 비율. 선택한 이슈를 그 위쪽 가운데로 옮긴다 */
+  bottomCoverRatio?: number
 }
 
 const RADIUS_SOURCE = 'search-radius'
@@ -107,6 +110,7 @@ export default function IssueMap({
   weatherGrid,
   airStations,
   weather,
+  bottomCoverRatio = 0,
 }: IssueMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const windCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -178,8 +182,30 @@ export default function IssueMap({
       })
     })
     mapRef.current = map
+
+    // 화면 높이가 바뀌면(홈 화면 앱 실행 직후, 회전, 앱 복귀) 지도 캔버스 크기를 다시 맞춘다.
+    // 크기 감지(ResizeObserver)만으로는 iPhone 홈 화면 앱에서 놓치는 경우가 있어 직접 부른다.
+    const resize = () => map.resize()
+    window.addEventListener(VIEWPORT_EVENT, resize)
+    map.once('load', resize)
+
+    // iOS는 앱이 백그라운드에 있을 때 지도 그래픽(WebGL)을 회수하기도 한다. 돌아와서도 복구되지 않으면 새로 연다.
+    let contextLost = false
+    let reloadTimer: ReturnType<typeof setTimeout> | undefined
+    map.on('webglcontextlost', () => (contextLost = true))
+    map.on('webglcontextrestored', () => (contextLost = false))
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => contextLost && window.location.reload(), 1500)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
     const markers = markersRef.current
     return () => {
+      window.removeEventListener(VIEWPORT_EVENT, resize)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearTimeout(reloadTimer)
       markers.clear()
       airMarkersRef.current = []
       map.remove()
@@ -293,8 +319,10 @@ export default function IssueMap({
     if (!map || selectedId == null) return
     const issue = issues.find((i) => i.id === selectedId)
     if (issue?.lat == null || issue.lng == null) return
-    map.flyTo({ center: [issue.lng, issue.lat], zoom: Math.max(map.getZoom(), 14), speed: 1.4 })
-  }, [selectedId, issues])
+    // 바텀시트가 아래를 덮으면 그 위 영역의 가운데에 오도록 화면을 위로 밀어 둔다 (padding과 달리 이번 이동에만 적용)
+    const shift = (map.getContainer().clientHeight * bottomCoverRatio) / 2
+    map.flyTo({ center: [issue.lng, issue.lat], zoom: Math.max(map.getZoom(), 14), speed: 1.4, offset: [0, -shift] })
+  }, [selectedId, issues, bottomCoverRatio])
 
   return (
     <div className="relative h-full w-full">

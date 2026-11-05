@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchAir,
   fetchAirStations,
@@ -17,6 +17,9 @@ import IssueDetailView from './components/panel/IssueDetailView'
 import IssueList from './components/panel/IssueList'
 import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
+import BottomSheet, { type SheetSnap } from './components/panel/BottomSheet'
+import LocationChip from './components/panel/LocationChip'
+import { DESKTOP_QUERY, useMediaQuery } from './hooks/useMediaQuery'
 import {
   DEFAULT_LAYERS,
   DEFAULT_LOCATION,
@@ -109,6 +112,25 @@ export default function App() {
     })
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  // 모바일 바텀시트: 처음엔 살짝, 이슈를 고르면 절반으로 올렸다가 '뒤로'를 누르면 원래 높이로
+  const isDesktop = useMediaQuery(DESKTOP_QUERY)
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('peek')
+  const snapBeforeDetail = useRef<SheetSnap | null>(null)
+  const selectIssue = (id: number) => {
+    if (!isDesktop && snapBeforeDetail.current == null) {
+      snapBeforeDetail.current = sheetSnap
+      setSheetSnap('half')
+    }
+    setSelectedId(id)
+  }
+  const closeDetail = () => {
+    setSelectedId(null)
+    if (snapBeforeDetail.current != null) {
+      setSheetSnap(snapBeforeDetail.current)
+      snapBeforeDetail.current = null
+    }
+  }
   const [detailResult, setDetailResult] = useState<DetailResult | null>(null)
 
   // 1분마다 시각을 갱신하고, 그때 목록도 다시 불러온다
@@ -274,23 +296,62 @@ export default function App() {
     return selected ? [...nearby, selected] : nearby
   }, [nearby, topIssues, detail, selectedId])
 
-  return (
-    <div className="flex h-dvh flex-col">
-      <TopBar now={now} weather={weather} air={air} />
-      <TopIssues issues={topIssues} now={now} selectedId={selectedId} onSelect={setSelectedId} />
+  const listTitle = location.wholeCity ? '부산 전체 이슈' : '내 주변 이슈'
+  const disclaimer = (
+    <p className="shrink-0 border-t border-line px-4 py-2 text-[10px] leading-relaxed text-muted">
+      공식 재난 알림(긴급재난문자)을 대체하지 않는 보조 정보 서비스입니다. 기사는 제목·요약과 원문 링크만 제공합니다.
+    </p>
+  )
+  const locationControl = (
+    <LocationControl
+      location={location}
+      radiusKm={radiusKm}
+      periodDays={periodDays}
+      locating={locating}
+      onUseMyLocation={locate}
+      onSelectDistrict={selectDistrict}
+      onRadiusChange={setRadiusKm}
+      onPeriodChange={setPeriodDays}
+    />
+  )
+  const issuePanel =
+    selectedId == null ? (
+      <IssueList
+        issues={nearby}
+        now={now}
+        loading={nearbyLoading}
+        error={nearbyResult.error}
+        category={category}
+        onCategoryChange={setCategory}
+        onSelect={selectIssue}
+        showDistance={!location.wholeCity}
+        showHeader={isDesktop}
+      />
+    ) : (
+      <IssueDetailView detail={detail} error={detailError} now={now} onBack={closeDetail} />
+    )
+  const ticker = <AlertTicker alerts={alerts} error={alertsError} now={now} />
 
-      <main className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="relative h-[45dvh] shrink-0 md:h-auto md:flex-1">
+  return (
+    <div className="flex h-[var(--app-height,100dvh)] flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
+      <TopBar now={now} weather={weather} air={air} />
+      <TopIssues issues={topIssues} now={now} selectedId={selectedId} onSelect={selectIssue} />
+      {/* 모바일: 재난문자는 시트에 가려지지 않게 위쪽에 */}
+      {!isDesktop && ticker}
+
+      <main className="relative flex min-h-0 flex-1 md:flex-row">
+        <div className="relative min-h-0 flex-1">
           <IssueMap
             issues={mapIssues}
             location={location}
             radiusKm={radiusKm}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectIssue}
             layers={layers}
             weatherGrid={weatherGrid}
             weather={weather}
             airStations={airStations}
+            bottomCoverRatio={isDesktop ? 0 : 0.5}
           />
           <LayerControl
             layers={layers}
@@ -298,8 +359,13 @@ export default function App() {
             unavailable={layerErrors}
             observedAt={weatherGrid?.observed_at ?? null}
           />
+          {!isDesktop && (
+            <LocationChip location={location} radiusKm={radiusKm} periodDays={periodDays}>
+              {locationControl}
+            </LocationChip>
+          )}
           {notice && (
-            <div className="absolute top-14 right-3 left-14 z-10 flex items-start md:top-3 md:right-auto md:left-1/2 md:w-[400px] md:-translate-x-1/2 gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg">
+            <div className="absolute top-14 right-3 left-14 z-10 flex items-start gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg md:top-3 md:right-auto md:left-1/2 md:w-[400px] md:-translate-x-1/2">
               <span className="flex-1">{notice}</span>
               <button type="button" onClick={() => setNotice(null)} aria-label="안내 닫기" className="text-muted hover:text-foreground">
                 ✕
@@ -308,38 +374,34 @@ export default function App() {
           )}
         </div>
 
-        <aside className="flex min-h-0 flex-1 flex-col border-t border-line bg-panel md:w-[380px] md:flex-none md:border-t-0 md:border-l">
-          <LocationControl
-            location={location}
-            radiusKm={radiusKm}
-            periodDays={periodDays}
-            locating={locating}
-            onUseMyLocation={locate}
-            onSelectDistrict={selectDistrict}
-            onRadiusChange={setRadiusKm}
-            onPeriodChange={setPeriodDays}
-          />
-          {selectedId == null ? (
-            <IssueList
-              issues={nearby}
-              now={now}
-              loading={nearbyLoading}
-              error={nearbyResult.error}
-              category={category}
-              onCategoryChange={setCategory}
-              onSelect={setSelectedId}
-              showDistance={!location.wholeCity}
-            />
-          ) : (
-            <IssueDetailView detail={detail} error={detailError} now={now} onBack={() => setSelectedId(null)} />
-          )}
-          <p className="shrink-0 border-t border-line px-4 py-2 text-[10px] leading-relaxed text-muted">
-            공식 재난 알림(긴급재난문자)을 대체하지 않는 보조 정보 서비스입니다. 기사는 제목·요약과 원문 링크만 제공합니다.
-          </p>
-        </aside>
+        {isDesktop ? (
+          <aside className="flex min-h-0 w-[380px] flex-none flex-col border-l border-line bg-panel">
+            {locationControl}
+            {issuePanel}
+            {disclaimer}
+          </aside>
+        ) : (
+          <BottomSheet
+            snap={sheetSnap}
+            onSnapChange={setSheetSnap}
+            title={
+              selectedId == null ? (
+                <>
+                  <span>{listTitle}</span>
+                  <span className="text-xs font-normal text-muted">{nearbyLoading ? '불러오는 중…' : `${nearby.length}건`}</span>
+                </>
+              ) : (
+                <span className="truncate">{detail?.issue.title ?? '이슈 상세'}</span>
+              )
+            }
+          >
+            {issuePanel}
+            {disclaimer}
+          </BottomSheet>
+        )}
       </main>
 
-      <AlertTicker alerts={alerts} error={alertsError} now={now} />
+      {isDesktop && ticker}
     </div>
   )
 }

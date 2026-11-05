@@ -10,7 +10,8 @@ interface TopBarProps {
 
 export default function TopBar({ now, weather, air }: TopBarProps) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
+    // 홈 화면 앱에서는 상태표시줄 아래까지 화면이 깔리므로 그 높이(safe-area)만큼 내린다
+    <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-3 border-b border-line bg-panel px-4 pt-[env(safe-area-inset-top)]">
       <span className="relative flex h-2.5 w-2.5 shrink-0">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-75" />
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" />

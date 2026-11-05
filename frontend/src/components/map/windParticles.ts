@@ -55,10 +55,13 @@ export function startWindParticles(map: maplibregl.Map, canvas: HTMLCanvasElemen
     return particle
   }
 
+  // 휴대폰(터치 화면)은 배터리·발열을 고려해 입자를 절반 이하로 줄인다
+  const mobile = window.matchMedia('(pointer: coarse)').matches
+
   const reset = () => {
     resize()
     const { clientWidth: w, clientHeight: h } = map.getContainer()
-    const count = Math.min(1800, Math.round((w * h) / 700))
+    const count = mobile ? Math.min(700, Math.round((w * h) / 1400)) : Math.min(1800, Math.round((w * h) / 700))
     particles = Array.from({ length: count }, () => spawn())
     // 처음부터 나이를 흩어 놓아 한꺼번에 사라졌다 생기지 않게 한다
     particles.forEach((p) => (p.age = Math.floor(Math.random() * p.maxAge)))
