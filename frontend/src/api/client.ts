@@ -1,4 +1,15 @@
-import type { AirNow, AirStation, Alert, IssueDetail, IssueSummary, NearbyIssue, WeatherGrid, WeatherNow } from '../types'
+import type {
+  AirNow,
+  AirStation,
+  Alert,
+  ChatReply,
+  IssueDetail,
+  IssueSummary,
+  NearbyIssue,
+  UserLocation,
+  WeatherGrid,
+  WeatherNow,
+} from '../types'
 
 async function getJson<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const query = new URLSearchParams()
@@ -35,3 +46,26 @@ export const fetchWeatherGrid = () => getJson<WeatherGrid>('/api/weather/grid')
 
 /** 지도 미세먼지 레이어: 측정소별 실시간 값 */
 export const fetchAirStations = () => getJson<AirStation[]>('/api/air/stations')
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/** API-006 대화형 질의. 실패하면 서버가 준 안내 문구(요청 제한 등)를 오류 메시지로 쓴다 */
+export async function postChat(message: string, history: ChatTurn[], location: UserLocation): Promise<ChatReply> {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      history,
+      location: { lat: location.lat, lng: location.lng, label: location.label.slice(0, 50) },
+    }),
+  })
+  if (!res.ok) {
+    const detail = await res.json().then((b: { detail?: unknown }) => b.detail).catch(() => null)
+    throw new Error(typeof detail === 'string' ? detail : '답변을 받지 못했습니다. 잠시 후 다시 물어봐 주세요.')
+  }
+  return res.json() as Promise<ChatReply>
+}

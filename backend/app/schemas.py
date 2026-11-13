@@ -1,8 +1,10 @@
 """API 응답 형식 (SDD 6장)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class IssueSummary(BaseModel):
@@ -74,6 +76,24 @@ class WeatherOut(BaseModel):
     source: str
 
 
+class DailyForecast(BaseModel):
+    """하루 날씨 예보 요약 (대화형 질의에서 '내일 가도 괜찮을까?'에 답할 때 쓴다)."""
+
+    date: date
+    temp_min: float | None
+    temp_max: float | None
+    rain_chance: int | None  # 그날 가장 높은 강수확률 (%)
+    sky: str | None  # 낮(9~18시)에 가장 많은 하늘 상태
+    precipitation: str  # 낮에 가장 많은 강수 형태 (없으면 '없음')
+    wind_max: float | None  # m/s
+
+
+class ForecastOut(BaseModel):
+    days: list[DailyForecast]
+    issued_at: datetime
+    source: str
+
+
 class WeatherGrid(BaseModel):
     """지도 기온·바람 레이어용 부산 일대 격자 실황. 값은 [위도 행][경도 열], 바다처럼 관측이 없는 칸은 None."""
 
@@ -113,3 +133,29 @@ class AirOut(BaseModel):
     grade: str | None
     measured_at: datetime
     source: str
+
+
+class ChatTurnIn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(max_length=2000)
+
+
+class ChatLocation(BaseModel):
+    lat: float = Field(ge=34.5, le=36.0)
+    lng: float = Field(ge=128.5, le=129.7)
+    label: str = Field("기준 위치", max_length=50)
+
+
+class ChatRequest(BaseModel):
+    """API-006 대화형 질의. 대화 기록은 서버에 저장하지 않고 화면이 최근 몇 턴을 함께 보낸다 (NFR-003)."""
+
+    message: str = Field(min_length=1, max_length=500)
+    history: list[ChatTurnIn] = Field(default_factory=list, max_length=20)
+    location: ChatLocation | None = None
+
+
+class ChatResponse(BaseModel):
+    # 본문의 [#id]는 issues에 있는 이슈를 가리킨다. 화면에서 눌러 지도로 이동한다
+    answer: str
+    issues: list[IssueSummary]
+    tools_used: list[str]

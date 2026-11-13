@@ -115,3 +115,10 @@ export interface UserLocation {
   /** '부산 전체'를 고른 경우: 반경 대신 부산 전역 */
   wholeCity?: boolean
 }
+
+/** API-006 대화형 질의 응답. answer의 [#id]는 issues의 이슈를 가리킨다 */
+export interface ChatReply {
+  answer: string
+  issues: IssueSummary[]
+  tools_used: string[]
+}
