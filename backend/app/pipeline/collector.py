@@ -70,7 +70,7 @@ def collect_news(session: Session, naver: NaverSearchClient, now: datetime, max_
                     continue
                 page_has_new = True
                 found[url] = Article(
-                    title=clean_text(item.get("title", "")),
+                    title=clean_text(item.get("title", ""))[:300],
                     description=clean_text(item.get("description", "")),
                     url=url,
                     published_at=published,

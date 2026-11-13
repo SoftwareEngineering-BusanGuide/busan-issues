@@ -8,11 +8,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, make_url, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.db import get_session
+from app.db import get_session, normalize_url
 from app.models import Article, Issue
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
@@ -31,6 +31,8 @@ class LastStats(BaseModel):
 
 
 class PipelineStatus(BaseModel):
+    # 쓰고 있는 DB 종류: sqlite(재시작마다 비워짐) / postgresql(유지). 주소는 내보내지 않는다
+    database: str
     enabled: bool
     # 키별 설정 여부 (값은 내보내지 않는다)
     keys_configured: dict[str, bool]
@@ -56,9 +58,10 @@ class PipelineStatus(BaseModel):
 
 
 def scrub(text: str, settings: Settings) -> str:
-    """오류 메시지에 키 값이 들어 있으면 ***로 가린다."""
-    for field in SECRET_FIELDS:
-        value = getattr(settings, field)
+    """오류 메시지에 키 값이나 DB 비밀번호가 들어 있으면 ***로 가린다."""
+    secrets = [getattr(settings, field) for field in SECRET_FIELDS]
+    secrets.append(make_url(normalize_url(settings.database_url)).password)
+    for value in secrets:
         if value and len(value) >= 4:
             text = text.replace(value, "***")
     return text[:500]
@@ -80,6 +83,7 @@ def pipeline_status(request: Request, session: Session = Depends(get_session)) -
 
     oldest, newest = session.execute(select(func.min(Article.published_at), func.max(Article.published_at))).one()
     return PipelineStatus(
+        database=session.get_bind().dialect.name,
         enabled=cfg.pipeline_enabled,
         keys_configured={field: bool(getattr(cfg, field)) for field in SECRET_FIELDS},
         ready=cfg.pipeline_ready,
