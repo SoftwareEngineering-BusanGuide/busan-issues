@@ -16,12 +16,13 @@ SECRETS = {
 
 
 @pytest.fixture
-def keyed_client(tmp_path):
+def keyed_client(db_url):
     # 키는 있지만 자동 수집은 끈다 (테스트에서 스케줄러가 외부 API를 부르지 않게)
     settings = Settings(_env_file=None, pipeline_enabled=False, **SECRETS)
-    app = create_app(f"sqlite:///{tmp_path / 'test.db'}", settings)
+    app = create_app(db_url, settings)
     with TestClient(app) as c:
         yield c
+    app.state.db.engine.dispose()
 
 
 def _assert_no_secret(res_text: str):
@@ -31,6 +32,7 @@ def _assert_no_secret(res_text: str):
 
 def test_status_without_keys(client: TestClient):
     body = client.get("/api/pipeline/status").json()
+    assert body["database"] in ("sqlite", "postgresql")
     assert body["ready"] is False and body["scheduler_alive"] is False
     assert body["keys_configured"] == {k: False for k in SECRETS}
     assert body["runs"] == 0 and body["issues"] == 0 and body["articles_by_triage"] == {}
@@ -91,3 +93,10 @@ def test_run_status_resets_running_flag_after_failure(keyed_client: TestClient):
     with pytest.raises(RuntimeError):
         pipeline.run()
     assert pipeline.status.runs == 2
+
+
+def test_scrub_hides_database_password():
+    from app.routers.pipeline import scrub
+
+    settings = Settings(_env_file=None, database_url="postgresql://alimi:db-PASSWORD-9@ep-x.neon.tech/neondb")
+    assert scrub("connect failed for alimi:db-PASSWORD-9@ep-x", settings) == "connect failed for alimi:***@ep-x"

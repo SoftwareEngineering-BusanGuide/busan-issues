@@ -6,6 +6,7 @@
 |---|---|---|---|
 | 화면 (React) | **Vercel** Hobby (무료) | `frontend/vercel.json` | `https://<프로젝트>.vercel.app` |
 | 서버 (FastAPI) | **Render** Free | `render.yaml` | `https://busan-alimi-api.onrender.com` |
+| DB (PostgreSQL) | **Neon** Free | Render의 `DATABASE_URL` | `ep-...ap-southeast-1.aws.neon.tech` |
 
 화면에서 `/api/...`로 보낸 요청은 Vercel이 Render 서버로 넘깁니다 (`vercel.json`의 rewrites). 그래서 브라우저 입장에서는 같은 주소라 CORS 설정이 필요 없습니다.
 
@@ -35,6 +36,20 @@
 
 API 키는 Vercel에는 넣지 않습니다. 화면은 키 없이 서버만 호출합니다.
 
+## 3. Neon (DB, 데이터 유지)
+
+Render 무료 서버는 디스크가 유지되지 않아 재시작·재배포마다 SQLite DB가 빕니다. 그러면 4주치 기사를 처음부터 다시 판별하느라 Gemini 한도를 쓰고, 이슈가 다 채워지기까지 오래 걸립니다. DB를 Neon(무료 PostgreSQL)에 두면 서버가 재시작해도 데이터가 남습니다.
+
+1. [neon.tech](https://neon.tech)에 **GitHub 계정으로 가입**합니다. (Free 플랜, 카드 불필요)
+2. **Create project**에서 이름은 `busan-alimi`, Postgres 버전은 기본값, **Region은 `AWS Asia Pacific (Singapore)`**를 고릅니다. (Render 서버와 같은 지역이라 빠릅니다)
+3. 프로젝트 화면의 **Connect**를 누르고 **Connection pooling을 끈 주소**를 복사합니다. `postgresql://neondb_owner:...@ep-...ap-southeast-1.aws.neon.tech/neondb?sslmode=require...` 형태입니다.
+   - 이 주소에는 **DB 비밀번호가 들어 있습니다.** 저장소·채팅·스크린샷에 올리지 마세요.
+4. Render 대시보드 → `busan-alimi-api` → **Environment**에서 `DATABASE_URL`을 추가하고 3의 주소를 붙여 넣은 뒤 **Save, rebuild, and deploy**를 누릅니다.
+5. 배포가 끝나면 `https://busan-alimi-api.onrender.com/api/pipeline/status`에서 `"database": "postgresql"`인지 확인합니다. (주소·비밀번호는 표시되지 않습니다)
+   - 처음에는 DB가 비어 있어 4주치를 다시 모으고 판별합니다. 한 번에 300건씩이라 다 판별하는 데 시간이 걸리지만, **이제 재시작해도 이어서 처리**합니다.
+
+Neon 무료 플랜은 저장 공간 0.5GB입니다. 기사는 제목·요약·링크만 저장해 한 달에 10MB 안팎이라 학기 동안 충분합니다. 쓰지 않으면 DB가 잠들고, 서버가 접속하면 1초 안팎으로 깨어납니다.
+
 ## 이슈가 안 보일 때
 
 브라우저에서 `https://busan-alimi-api.onrender.com/api/pipeline/status`를 열어 봅니다. (키 값은 표시되지 않습니다)
@@ -50,9 +65,8 @@ API 키는 Vercel에는 넣지 않습니다. 화면은 키 없이 서버만 호�
 ## 무료 플랜에서 알아둘 점
 
 - **서버가 잠듭니다:** Render 무료 서버는 15분 동안 요청이 없으면 잠들고, 다시 깨어나는 데 1분 정도 걸립니다. 그동안 화면에 "서버에 연결할 수 없습니다"가 잠깐 보일 수 있고, 1분마다 다시 불러오므로 서버가 깨면 자동으로 채워집니다. 발표나 시연 직전에는 `/api/health`를 한 번 열어 미리 깨워 두세요.
-- **데이터가 초기화됩니다:** 무료 플랜은 디스크가 유지되지 않아, 재시작·재배포마다 SQLite DB가 빕니다. 서버가 시작되면 뉴스 수집이 바로 돌아 **1~2분 안에 이슈가 다시 채워집니다.** 데이터를 유지하려면 나중에 무료 PostgreSQL(Neon, Supabase 등)을 붙이고 `DATABASE_URL`을 설정해야 합니다.
+- **데이터 유지:** Render 무료 플랜은 디스크가 유지되지 않으므로 DB는 Neon에 둡니다 (3단계). `DATABASE_URL`이 없으면 SQLite를 써서 재시작·재배포마다 DB가 빕니다.
 - **뉴스 수집은 서버가 깨어 있을 때만 돕니다:** 수집은 서버 안에서 30분마다 도는데, 무료 서버는 잠들면 수집도 멈춥니다. 누군가 접속해 서버가 깨면 다시 수집합니다.
 - **Gemini 무료 한도:** 최근 4주 기사(수천 건)를 모으므로, 한 번 실행에 300건씩(Gemini 약 30회 호출) 나눠 판별하고 나머지는 다음 실행에서 이어 처리합니다. 한도에 걸리면 판별하지 못한 기사는 다음 실행에서 다시 처리합니다.
-- **⚠️ 무료 서버 + 4주 수집:** Render 무료 서버는 잠들었다 깨면 DB가 비어서, 4주치를 처음부터 다시 모으고 판별합니다. Gemini 한도를 아끼고 과거 이슈를 유지하려면 **무료 PostgreSQL(Neon 등)을 붙여 데이터를 유지**하는 것을 권장합니다.
 - **재난문자는 실패할 수 있습니다:** 재난문자 API는 등록한 IP에서만 동작하는데, Render 서버의 IP는 등록돼 있지 않습니다. 이때 화면 하단에 "실시간 재난문자를 일시적으로 불러올 수 없습니다"가 표시되며, 정상 동작입니다. 재난문자까지 상시로 보여주려면 고정 IP가 있는 서버(예: 오라클 클라우드 무료 VM)로 옮기고 그 IP를 추가로 등록해야 합니다.
 - **API 키 공개 주의:** 키는 Render 환경변수에만 넣고 저장소에는 절대 커밋하지 않습니다. 대화형 질의(Gemini)를 붙이기 전에 요청 횟수 제한을 먼저 넣어야 합니다.
