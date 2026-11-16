@@ -73,7 +73,7 @@ def classify(llm: GeminiClient, articles: list[ArticleInput]) -> dict[int, Class
             busan_issue=bool(row.get("busan_issue")),
             category=row["category"],
             importance=IMPORTANCE_HIGH if row.get("importance") == IMPORTANCE_HIGH else IMPORTANCE_NORMAL,
-            place=(row.get("place") or "").strip() or None,
+            place=(row.get("place") or "").strip()[:200] or None,
             title=(row.get("title") or "").strip()[:60],
         )
     return result

@@ -10,7 +10,7 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # 서버가 시작되면 뉴스 수집 파이프라인이 바로 한 번 돌고, 이후 30분마다 돈다.
-    # 무료 플랜은 디스크가 유지되지 않아 재시작마다 DB가 비고, 시작 후 1~2분 안에 다시 채워진다.
+    # 무료 플랜은 디스크가 유지되지 않으므로 DB는 Neon(무료 PostgreSQL)에 둔다. DATABASE_URL이 없으면 SQLite를 써서 재시작마다 빈다.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
@@ -25,4 +25,6 @@ services:
       - key: NCP_CLIENT_SECRET
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL # Neon 연결 주소 (postgresql://...). docs/deployment.md 3단계
         sync: false

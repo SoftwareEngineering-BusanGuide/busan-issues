@@ -10,7 +10,10 @@ from app.db import Base
 
 
 class UTCDateTime(TypeDecorator):
-    """UTC로 저장하고, 시간대를 저장하지 않는 SQLite에서 읽을 때도 UTC 시각으로 돌려준다."""
+    """UTC로 저장하고, 읽을 때도 늘 UTC로 돌려준다.
+
+    SQLite는 시간대 없이 돌려주고, PostgreSQL은 DB 서버의 시간대(예: +09:00)로 돌려주므로 둘 다 UTC로 맞춘다.
+    """
 
     impl = DateTime(timezone=True)
     cache_ok = True
@@ -21,9 +24,11 @@ class UTCDateTime(TypeDecorator):
         return value
 
     def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
-        if value is not None and value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class Issue(Base):

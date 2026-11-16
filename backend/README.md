@@ -17,7 +17,7 @@ pip install -r requirements-dev.txt
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `DATABASE_URL` | `backend/busan_alimi.db` (SQLite) | PostgreSQL 전환 시 `postgresql+psycopg://...` 형식으로 지정 |
+| `DATABASE_URL` | `backend/busan_alimi.db` (SQLite) | 배포에서는 Neon(무료 PostgreSQL) 주소. `postgresql://...`를 그대로 넣으면 psycopg 드라이버로 바꿔 연결합니다 |
 | `CORS_ORIGINS` | `http://localhost:5173` | 프론트엔드 개발 서버 주소 (쉼표로 여러 개) |
 
 ## 실행
@@ -29,7 +29,7 @@ uvicorn app.main:app --reload
 - 상태 확인: http://localhost:8000/api/health → `{"status": "ok", "database": "ok"}`
 - API 문서 (자동 생성): http://localhost:8000/docs
 
-서버를 처음 시작하면 `issues`, `articles` 테이블이 자동으로 만들어집니다.
+서버를 처음 시작하면 `issues`, `articles` 테이블이 자동으로 만들어집니다. (SQLite·PostgreSQL 모두)
 
 ### 뉴스 수집 파이프라인 (FR-008 ~ FR-010)
 
@@ -75,6 +75,12 @@ python -m app.pipeline
 
 ```bash
 pytest
+```
+
+기본은 테스트마다 임시 SQLite를 씁니다. PostgreSQL에서도 확인하려면 **테스트 전용** DB 주소를 주세요. 테스트마다 테이블을 지우므로 배포 DB 주소를 넣으면 안 됩니다.
+
+```bash
+TEST_DATABASE_URL=postgresql://... pytest
 ```
 
 ## 구조
