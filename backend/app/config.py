@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     pipeline_max_per_run: int = 300  # 한 번에 판별할 최대 기사 수 (Gemini 한도 보호). 나머지는 다음 실행에서
     gemini_model: str = "gemini-3.5-flash-lite"
 
+    # 대화형 질의 (FR-006). GEMINI_API_KEY가 있으면 켜진다. 모델을 비우면 gemini_model을 쓴다
+    chat_model: str = ""
+    chat_per_minute: int = 5  # IP별
+    chat_per_day: int = 50  # IP별
+    chat_total_per_day: int = 500  # 서비스 전체 (Gemini 무료 한도 보호)
+
     @property
     def pipeline_ready(self) -> bool:
         return self.pipeline_enabled and bool(self.ncp_client_id and self.ncp_client_secret and self.gemini_api_key)

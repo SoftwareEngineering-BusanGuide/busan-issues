@@ -1,4 +1,4 @@
-"""Gemini API로 정해진 JSON 형식의 응답을 받는다. 모델을 바꿔도 이 파일만 고치면 된다 (NFR-006)."""
+"""Gemini API 호출: 정해진 JSON 형식의 응답(파이프라인), 도구 호출(대화형 질의). 모델을 바꿔도 이 파일만 고치면 된다 (NFR-006)."""
 
 import json
 import time
@@ -35,6 +35,28 @@ class GeminiClient:
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json", "responseSchema": schema, "temperature": 0},
         }
+        parts = self._generate(body)["parts"]
+        try:
+            return json.loads("".join(p.get("text", "") for p in parts))
+        except json.JSONDecodeError as e:
+            raise LlmError(f"Gemini 응답 형식 오류: {e}") from e
+
+    def generate_with_tools(self, system: str, contents: list[dict], tools: list[dict], allow_tools: bool = True) -> dict:
+        """도구(function calling)를 쓸 수 있게 한 번 호출하고, 모델 응답(content)을 그대로 돌려준다.
+
+        응답의 functionCall 부분에는 다음 호출에 그대로 돌려줘야 하는 서명(thoughtSignature)이 붙을 수 있으므로,
+        호출하는 쪽은 이 content를 고치지 말고 대화 기록에 그대로 붙인다.
+        """
+        body = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "tools": [{"functionDeclarations": tools}],
+            "toolConfig": {"functionCallingConfig": {"mode": "AUTO" if allow_tools else "NONE"}},
+            "generationConfig": {"temperature": 0.3},
+        }
+        return self._generate(body)
+
+    def _generate(self, body: dict) -> dict:
         url = f"{BASE_URL}/models/{self._model}:generateContent"
         for attempt in range(self._retries + 1):
             try:
@@ -51,8 +73,9 @@ class GeminiClient:
             if res.status_code != 200:
                 raise LlmError(f"Gemini 오류 {res.status_code}: {res.text[:200]}")
             try:
-                parts = res.json()["candidates"][0]["content"]["parts"]
-                return json.loads("".join(p.get("text", "") for p in parts))
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
+                content = res.json()["candidates"][0]["content"]
+                content["parts"]  # noqa: B018  (부분이 없는 응답도 형식 오류로 본다)
+                return content
+            except (KeyError, IndexError, ValueError) as e:
                 raise LlmError(f"Gemini 응답 형식 오류: {e}") from e
         raise LlmError("Gemini 재시도 횟수 초과")

@@ -8,10 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.air import AirKoreaProvider
 from app.alerts import SafetyDataAlertProvider
+from app.chat import RateLimiter
 from app.config import Settings, settings as default_settings
 from app.db import Database
 from app.pipeline import PipelineScheduler, build_pipeline
-from app.routers import alerts, conditions, health, issues, pipeline
+from app.pipeline.geocoder import Geocoder
+from app.pipeline.llm import GeminiClient
+from app.pipeline.naver import NaverSearchClient
+from app.routers import alerts, chat, conditions, health, issues, pipeline
 from app.weather import KmaWeatherProvider
 
 # 뉴스 파이프라인 진행 로그를 서버 로그에서 볼 수 있게 한다
@@ -49,6 +53,14 @@ def create_app(database_url: str | None = None, app_settings: Settings | None = 
     app.state.alert_provider = SafetyDataAlertProvider(cfg.safety_data_api_key) if cfg.safety_data_api_key else None
     app.state.weather_provider = KmaWeatherProvider(cfg.data_go_kr_api_key) if cfg.data_go_kr_api_key else None
     app.state.air_provider = AirKoreaProvider(cfg.data_go_kr_api_key) if cfg.data_go_kr_api_key else None
+    # 대화형 질의: 사용자가 기다리므로 재시도는 한 번만 한다. 장소 검색은 네이버 키가 있을 때만
+    app.state.chat_llm = (
+        GeminiClient(cfg.gemini_api_key, cfg.chat_model or cfg.gemini_model, retries=1) if cfg.gemini_api_key else None
+    )
+    app.state.chat_geocoder = (
+        Geocoder(NaverSearchClient(cfg.ncp_client_id, cfg.ncp_client_secret)) if cfg.ncp_client_id and cfg.ncp_client_secret else None
+    )
+    app.state.chat_limiter = RateLimiter(cfg.chat_per_minute, cfg.chat_per_day, cfg.chat_total_per_day)
 
     app.add_middleware(
         CORSMiddleware,
@@ -56,7 +68,7 @@ def create_app(database_url: str | None = None, app_settings: Settings | None = 
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
-    for router in (health.router, issues.router, alerts.router, conditions.router, pipeline.router):
+    for router in (health.router, issues.router, alerts.router, conditions.router, pipeline.router, chat.router):
         app.include_router(router, prefix="/api")
     return app
 

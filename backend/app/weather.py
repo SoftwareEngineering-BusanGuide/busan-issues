@@ -1,13 +1,14 @@
-"""기상청 단기예보 조회서비스: 초단기실황(현재 기온 등) + 초단기예보(하늘 상태)."""
+"""기상청 단기예보 조회서비스: 초단기실황(현재 기온 등) + 초단기예보(하늘 상태) + 단기예보(모레까지)."""
 
 import math
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from app.cache import DataUnavailable, StaleCache
-from app.schemas import WeatherGrid, WeatherOut
+from app.schemas import DailyForecast, ForecastOut, WeatherGrid, WeatherOut
 
 KST = timezone(timedelta(hours=9))
 KMA_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
@@ -54,6 +55,48 @@ def base_times(now: datetime) -> tuple[datetime, datetime]:
     return ncst, fcst
 
 
+def forecast_base_time(now: datetime) -> datetime:
+    """단기예보 발표 시각. 하루 8번(02·05·08·11·14·17·20·23시) 발표하고 약 10분 뒤에 나온다."""
+    now = now.astimezone(KST) - timedelta(minutes=10)
+    hour = max((h for h in range(2, 24, 3) if h <= now.hour), default=None)
+    if hour is None:
+        return (now - timedelta(days=1)).replace(hour=23, minute=0, second=0, microsecond=0)
+    return now.replace(hour=hour, minute=0, second=0, microsecond=0)
+
+
+def summarize_forecast(items: list[dict]) -> list[DailyForecast]:
+    """단기예보 시간별 값 → 날짜별 요약."""
+    by_day: dict[str, dict[str, list[tuple[int, str]]]] = {}
+    for item in items:
+        day = by_day.setdefault(item["fcstDate"], {})
+        day.setdefault(item["category"], []).append((int(item["fcstTime"]) // 100, str(item["fcstValue"])))
+
+    def numbers(values: list[tuple[int, str]]) -> list[float]:
+        return [n for _, v in values if (n := _number(v)) is not None]
+
+    def daytime_mode(values: list[tuple[int, str]], labels: dict[str, str]) -> str | None:
+        common = Counter(labels.get(v) for h, v in values if 9 <= h <= 18 and v in labels).most_common(1)
+        return common[0][0] if common else None
+
+    days = []
+    for key in sorted(by_day):
+        day = by_day[key]
+        temps = numbers(day.get("TMP", []))
+        tmn, tmx = numbers(day.get("TMN", [])), numbers(day.get("TMX", []))
+        pops, winds = numbers(day.get("POP", [])), numbers(day.get("WSD", []))
+        rain = {k: v for k, v in PRECIPITATION_TYPES.items() if k != "0"}
+        days.append(DailyForecast(
+            date=datetime.strptime(key, "%Y%m%d").date(),
+            temp_min=tmn[0] if tmn else (min(temps) if temps else None),
+            temp_max=tmx[0] if tmx else (max(temps) if temps else None),
+            rain_chance=int(max(pops)) if pops else None,
+            sky=daytime_mode(day.get("SKY", []), SKY_TYPES),
+            precipitation=daytime_mode(day.get("PTY", []), rain) or "없음",
+            wind_max=max(winds) if winds else None,
+        ))
+    return days
+
+
 def _number(value: object) -> float | None:
     try:
         return float(str(value))
@@ -75,6 +118,8 @@ class KmaWeatherProvider:
         # 격자 전체는 발표 시각(매시)마다 한 번만 받는다. 새 시각 자료를 못 받으면 직전 격자를 쓴다
         self._grid_cache: StaleCache[WeatherGrid] = StaleCache(ttl_seconds=3600)
         self._last_grid: WeatherGrid | None = None
+        # 단기예보는 3시간마다 발표되므로 격자·발표 시각별로 1시간 캐시
+        self._forecast_cache: StaleCache[ForecastOut] = StaleCache(ttl_seconds=3600)
 
     def grid(self) -> WeatherGrid:
         """부산 일대 격자의 기온과 바람 성분 (지도 레이어용)."""
@@ -117,12 +162,22 @@ class KmaWeatherProvider:
         nx, ny = to_grid(lat, lng)
         return self._cache.get((nx, ny), lambda: self._fetch(nx, ny))
 
-    def _items(self, operation: str, base: datetime, nx: int, ny: int) -> list[dict]:
+    def forecast(self, lat: float, lng: float) -> ForecastOut:
+        """오늘부터 모레까지 날짜별 예보."""
+        nx, ny = to_grid(lat, lng)
+        base = forecast_base_time(datetime.now(KST))
+        return self._forecast_cache.get((nx, ny, base.isoformat()), lambda: ForecastOut(
+            days=summarize_forecast(self._items("getVilageFcst", base, nx, ny, rows=1000)),
+            issued_at=base,
+            source=SOURCE,
+        ))
+
+    def _items(self, operation: str, base: datetime, nx: int, ny: int, rows: int = 100) -> list[dict]:
         res = self._client.get(f"{KMA_URL}/{operation}", params={
             "serviceKey": self._api_key,
             "dataType": "JSON",
             "pageNo": 1,
-            "numOfRows": 100,
+            "numOfRows": rows,
             "base_date": base.strftime("%Y%m%d"),
             "base_time": base.strftime("%H%M"),
             "nx": nx,
