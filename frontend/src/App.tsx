@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   fetchAir,
   fetchAirStations,
@@ -8,6 +8,7 @@ import {
   fetchTopIssues,
   fetchWeather,
   fetchWeatherGrid,
+  serverStatus,
 } from './api/client'
 import TopBar from './components/header/TopBar'
 import TopIssues from './components/header/TopIssues'
@@ -46,7 +47,7 @@ import type {
   WeatherNow,
 } from './types'
 
-const SERVER_ERROR = '서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인하세요.'
+const SERVER_ERROR = '서버에 연결하지 못했습니다. 잠시 후 자동으로 다시 시도합니다.'
 const REFRESH_MS = 60_000
 const GEO_SUPPORTED = 'geolocation' in navigator
 const GEO_UNSUPPORTED_NOTICE = '이 브라우저는 위치 기능을 지원하지 않습니다. 구·군을 직접 선택하세요.'
@@ -114,6 +115,7 @@ export default function App() {
     })
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const serverWaking = useSyncExternalStore(serverStatus.subscribe, serverStatus.isWaking)
 
   // 모바일 바텀시트: 처음엔 살짝, 이슈를 고르면 절반으로 올렸다가 '뒤로'를 누르면 원래 높이로
   const isDesktop = useMediaQuery(DESKTOP_QUERY)
@@ -216,9 +218,15 @@ export default function App() {
   const nearbyKey = `${location.lat},${location.lng},${searchRadius},${periodDays},${category}`
   useEffect(() => {
     let ignore = false
-    fetchNearbyIssues(location.lat, location.lng, searchRadius, periodDays, category || undefined)
-      .then((data) => !ignore && setNearbyResult({ key: nearbyKey, data, error: null }))
-      .catch(() => !ignore && setNearbyResult({ key: nearbyKey, data: [], error: SERVER_ERROR }))
+    const show = (data: NearbyIssue[]) => !ignore && setNearbyResult({ key: nearbyKey, data, error: null })
+    fetchNearbyIssues(location.lat, location.lng, searchRadius, periodDays, category || undefined, show)
+      .then(show)
+      // 이미 보여주고 있는 목록(저장된 값, 1분 전 값)은 그대로 두고, 보여줄 것이 없을 때만 오류를 띄운다
+      .catch(
+        () =>
+          !ignore &&
+          setNearbyResult((prev) => (prev.key === nearbyKey && prev.data.length ? prev : { key: nearbyKey, data: [], error: SERVER_ERROR })),
+      )
     return () => {
       ignore = true
     }
@@ -229,8 +237,9 @@ export default function App() {
   // API-003 부산 주요 이슈 (선택한 기간 안)
   useEffect(() => {
     let ignore = false
-    fetchTopIssues(periodDays)
-      .then((data) => !ignore && setTopIssues(data))
+    const show = (data: IssueSummary[]) => !ignore && setTopIssues(data)
+    fetchTopIssues(periodDays, show)
+      .then(show)
       .catch(() => {})
     return () => {
       ignore = true
@@ -257,7 +266,7 @@ export default function App() {
   useEffect(() => {
     if (!needWeatherGrid) return
     let ignore = false
-    fetchWeatherGrid()
+    fetchWeatherGrid((data) => !ignore && setWeatherGrid(data))
       .then((data) => {
         if (ignore) return
         setWeatherGrid(data)
@@ -273,7 +282,7 @@ export default function App() {
   useEffect(() => {
     if (!layers.air) return
     let ignore = false
-    fetchAirStations()
+    fetchAirStations((data) => !ignore && setAirStations(data))
       .then((data) => {
         if (ignore) return
         setAirStations(data)
@@ -288,12 +297,15 @@ export default function App() {
   // 기준 위치의 날씨·미세먼지 (서버가 10분 캐시하므로 1분마다 불러도 외부 API 호출은 늘지 않는다)
   useEffect(() => {
     let ignore = false
-    fetchWeather(location.lat, location.lng)
-      .then((data) => !ignore && setWeather(data))
-      .catch(() => !ignore && setWeather(null))
-    fetchAir(location.lat, location.lng)
-      .then((data) => !ignore && setAir(data))
-      .catch(() => !ignore && setAir(null))
+    // 실패하면 보여주던 값을 그대로 둔다 (1분 뒤 다시 시도)
+    const showWeather = (data: WeatherNow) => !ignore && setWeather(data)
+    const showAir = (data: AirNow) => !ignore && setAir(data)
+    fetchWeather(location.lat, location.lng, showWeather)
+      .then(showWeather)
+      .catch(() => {})
+    fetchAir(location.lat, location.lng, showAir)
+      .then(showAir)
+      .catch(() => {})
     return () => {
       ignore = true
     }
@@ -303,8 +315,9 @@ export default function App() {
   useEffect(() => {
     if (selectedId == null) return
     let ignore = false
-    fetchIssueDetail(selectedId)
-      .then((data) => !ignore && setDetailResult({ id: selectedId, data, error: null }))
+    const show = (data: IssueDetail) => !ignore && setDetailResult({ id: selectedId, data, error: null })
+    fetchIssueDetail(selectedId, show)
+      .then(show)
       .catch(() => !ignore && setDetailResult({ id: selectedId, data: null, error: '이슈를 불러오지 못했습니다.' }))
     return () => {
       ignore = true
@@ -389,6 +402,12 @@ export default function App() {
   return (
     <div className="flex h-[var(--app-height,100dvh)] flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       <TopBar now={now} weather={weather} air={air} />
+      {serverWaking && (
+        // 무료 서버가 잠들어 있으면 처음 여는 데 30초~1분 걸린다. 그동안 기기에 저장된 마지막 정보를 보여준다
+        <div role="status" className="shrink-0 border-b border-caution/30 bg-caution/10 px-4 py-1.5 text-[11px] text-caution">
+          ⏳ 서버를 깨우는 중이에요 (최대 1분). 저장된 마지막 정보를 먼저 보여드려요.
+        </div>
+      )}
       <TopIssues issues={topIssues} now={now} selectedId={selectedId} onSelect={selectIssue} />
       {/* 모바일: 재난문자는 시트에 가려지지 않게 위쪽에 */}
       {!isDesktop && ticker}

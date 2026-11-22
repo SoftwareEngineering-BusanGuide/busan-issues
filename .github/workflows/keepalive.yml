@@ -1,0 +1,24 @@
+# Render 무료 서버는 15분 동안 요청이 없으면 잠들고, 깨는 데 30초~1분 걸린다.
+# 잠들면 뉴스 수집(30분마다)도 멈추므로, 10분마다 상태 확인 주소를 불러 깨워 둔다.
+# 무료 플랜은 한 달 750시간이라 서비스 하나를 계속 켜 둬도 남는다. 예약 실행은 main 브랜치에서만 돈다.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Render server
+        run: |
+          for attempt in 1 2 3; do
+            if curl -fsS -m 90 https://busan-alimi-api.onrender.com/api/health; then
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
