@@ -97,23 +97,45 @@ backend/
 │   ├── geo.py         # 거리 계산
 │   ├── cache.py       # 외부 API 응답 캐시 (실패 시 마지막 값)
 │   ├── alerts.py      # 재난문자 (재난안전데이터공유플랫폼)
-│   ├── weather.py     # 날씨 (기상청 초단기실황·예보, 격자 변환)
+│   ├── weather.py     # 날씨 (기상청 초단기실황·예보, 단기예보, 격자 변환)
 │   ├── air.py         # 미세먼지 (에어코리아, 가까운 측정소)
 │   ├── pipeline/      # 뉴스 수집 파이프라인 (python -m app.pipeline)
 │   │   ├── naver.py      # NAVER API HUB 뉴스·지역 검색
-│   │   ├── llm.py        # Gemini 호출 (JSON 응답, 재시도)
+│   │   ├── llm.py        # Gemini 호출 (JSON 응답, 도구 호출, 재시도)
 │   │   ├── collector.py  # 1. 수집
 │   │   ├── analyzer.py   # 2·3. 판별·분류, 같은 사건 묶기, 요약 (프롬프트)
 │   │   ├── geocoder.py   # 4. 장소 → 좌표
 │   │   └── runner.py     # 실행 순서, 30분 스케줄러
+│   ├── chat/          # 대화형 질의: agent.py(프롬프트·도구 반복), tools.py(도구), limits.py(요청 제한)
 │   └── routers/       # API 엔드포인트 (SDD 6장)
 │       ├── health.py  # API-001
 │       ├── issues.py  # API-002, 003, 004
 │       ├── alerts.py  # API-007
+│       ├── chat.py    # API-006
 │       ├── conditions.py  # 날씨·미세먼지
 │       └── pipeline.py    # 수집 상태 확인
 └── tests/
 ```
+
+## 대화형 질의 (FR-006, API-006)
+
+`GEMINI_API_KEY`가 있으면 켜집니다. 사용자가 물으면 Gemini가 아래 도구를 골라 부르고, **도구 결과에 있는 사실로만** 답합니다. (`app/chat/`)
+
+| 도구 | 하는 일 |
+|---|---|
+| `find_place` | 장소 이름 → 좌표 (구·군은 구청 좌표, 나머지는 네이버 지역 검색) |
+| `search_issues` | 위치·반경·기간·분류·검색어로 뉴스 이슈 찾기 |
+| `get_issue_timeline` | 이슈 하나의 상황 요약과 관련 기사(시간순) |
+| `get_weather` | 현재 날씨 + 날짜별 단기예보 (기상청 `getVilageFcst`) |
+| `get_air_quality` | 가장 가까운 측정소의 미세먼지 |
+| `get_alerts` | 최근 재난문자·특보 |
+
+- 요청: `{"message": "내일 해운대 가도 괜찮을까?", "history": [{"role": "user", "text": "..."}], "location": {"lat": 35.18, "lng": 129.07, "label": "부산시청"}}`
+- 응답: `{"answer": "... [#12] ...\n출처: ...", "issues": [이슈 요약], "tools_used": ["find_place", ...]}`. 본문의 `[#12]`는 `issues`의 이슈를 가리키고, 도구 결과에 없던 id는 서버가 지웁니다.
+- 한 질문에 도구는 최대 5번 부르고, 그래도 답이 없으면 도구를 막고 글로 답하게 합니다.
+- **요청 제한:** IP당 1분 5번·하루 50번, 서비스 전체 하루 500번 (`CHAT_PER_MINUTE`, `CHAT_PER_DAY`, `CHAT_TOTAL_PER_DAY`). 넘으면 429. 서버 메모리에서 세므로 재시작하면 초기화됩니다.
+- 질문·위치·대화는 저장하지 않습니다. 화면이 최근 대화를 함께 보내고, 서버는 최근 6턴만 모델에 넘깁니다.
+- 모델은 `CHAT_MODEL`(비우면 `GEMINI_MODEL`). 뉴스 파이프라인과 같은 Gemini 키·한도를 나눠 씁니다.
 
 ## 구현 현황
 
@@ -124,7 +146,7 @@ backend/
 | API-003 | `GET /api/issues/top` | ✅ (`days`: 최근 며칠, 기본 7) |
 | API-004 | `GET /api/issues/{id}` | ✅ (기사 시간순 포함) |
 | API-005 | `GET /api/issues/{id}/timeline` | ⏳ |
-| API-006 | `POST /api/chat` | ⏳ |
+| API-006 | `POST /api/chat` | ✅ 대화형 질의 (아래 참고) |
 | API-007 | `GET /api/alerts` | ✅ 실시간 |
 | (추가) | `GET /api/weather?lat&lng` | ✅ 기상청 실시간 |
 | (추가) | `GET /api/air?lat&lng` | ✅ 에어코리아 실시간 |

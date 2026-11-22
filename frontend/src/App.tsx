@@ -18,7 +18,9 @@ import IssueList from './components/panel/IssueList'
 import LocationControl from './components/panel/LocationControl'
 import AlertTicker from './components/ticker/AlertTicker'
 import BottomSheet, { type SheetSnap } from './components/panel/BottomSheet'
+import ChatPanel from './components/panel/ChatPanel'
 import LocationChip from './components/panel/LocationChip'
+import { useChat } from './hooks/useChat'
 import { DESKTOP_QUERY, useMediaQuery } from './hooks/useMediaQuery'
 import {
   DEFAULT_LAYERS,
@@ -117,12 +119,23 @@ export default function App() {
   const isDesktop = useMediaQuery(DESKTOP_QUERY)
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('peek')
   const snapBeforeDetail = useRef<SheetSnap | null>(null)
-  const selectIssue = (id: number) => {
+  const openIssue = (id: number) => {
     if (!isDesktop && snapBeforeDetail.current == null) {
       snapBeforeDetail.current = sheetSnap
       setSheetSnap('half')
     }
     setSelectedId(id)
+  }
+  // 패널 탭: 주변 이슈 목록 / 대화형 질의. 답변 속 이슈를 누르면 상세를 보여주고, '뒤로'를 누르면 대화로 돌아간다
+  const [panelTab, setPanelTab] = useState<'issues' | 'chat'>('issues')
+  const detailFromChat = useRef(false)
+  const chat = useChat(location)
+  const selectIssue = (id: number) => {
+    if (panelTab === 'chat') {
+      detailFromChat.current = true
+      setPanelTab('issues')
+    }
+    openIssue(id)
   }
   const closeDetail = () => {
     setSelectedId(null)
@@ -130,6 +143,19 @@ export default function App() {
       setSheetSnap(snapBeforeDetail.current)
       snapBeforeDetail.current = null
     }
+    if (detailFromChat.current) {
+      detailFromChat.current = false
+      setPanelTab('chat')
+    }
+  }
+  const switchTab = (tab: 'issues' | 'chat') => {
+    if (selectedId != null) closeDetail()
+    detailFromChat.current = false
+    setPanelTab(tab)
+  }
+  const openChat = () => {
+    switchTab('chat')
+    setSheetSnap('full')
   }
   const [detailResult, setDetailResult] = useState<DetailResult | null>(null)
 
@@ -331,6 +357,34 @@ export default function App() {
       <IssueDetailView detail={detail} error={detailError} now={now} onBack={closeDetail} />
     )
   const ticker = <AlertTicker alerts={alerts} error={alertsError} now={now} />
+  const tabs = (
+    <div role="tablist" className="flex shrink-0 border-b border-line text-sm">
+      {(['issues', 'chat'] as const).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={panelTab === tab}
+          onClick={() => switchTab(tab)}
+          className={`flex-1 border-b-2 py-2 font-semibold ${
+            panelTab === tab ? 'border-accent text-foreground' : 'border-transparent text-muted hover:text-foreground'
+          }`}
+        >
+          {tab === 'issues' ? listTitle : '💬 AI에게 물어보기'}
+        </button>
+      ))}
+    </div>
+  )
+  const chatPanel = (
+    <ChatPanel
+      messages={chat.messages}
+      pending={chat.pending}
+      locationLabel={location.label}
+      onSend={chat.send}
+      onClear={chat.clear}
+      onSelectIssue={selectIssue}
+    />
+  )
 
   return (
     <div className="flex h-[var(--app-height,100dvh)] flex-col pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
@@ -364,6 +418,15 @@ export default function App() {
               {locationControl}
             </LocationChip>
           )}
+          {!isDesktop && sheetSnap === 'peek' && panelTab === 'issues' && (
+            <button
+              type="button"
+              onClick={openChat}
+              className="absolute right-3 bottom-[calc(54px+env(safe-area-inset-bottom)+12px)] z-20 rounded-full border border-accent/60 bg-panel/95 px-4 py-2 text-sm font-semibold shadow-lg"
+            >
+              💬 AI에게 물어보기
+            </button>
+          )}
           {notice && (
             <div className="absolute top-14 right-3 left-14 z-10 flex items-start gap-2 rounded-lg border border-caution/40 bg-panel/95 px-3 py-2 text-xs shadow-lg md:top-3 md:right-auto md:left-1/2 md:w-[400px] md:-translate-x-1/2">
               <span className="flex-1">{notice}</span>
@@ -376,16 +439,25 @@ export default function App() {
 
         {isDesktop ? (
           <aside className="flex min-h-0 w-[380px] flex-none flex-col border-l border-line bg-panel">
-            {locationControl}
-            {issuePanel}
-            {disclaimer}
+            {tabs}
+            {panelTab === 'chat' ? (
+              chatPanel
+            ) : (
+              <>
+                {locationControl}
+                {issuePanel}
+                {disclaimer}
+              </>
+            )}
           </aside>
         ) : (
           <BottomSheet
             snap={sheetSnap}
             onSnapChange={setSheetSnap}
             title={
-              selectedId == null ? (
+              panelTab === 'chat' ? (
+                <span>💬 AI에게 물어보기</span>
+              ) : selectedId == null ? (
                 <>
                   <span>{listTitle}</span>
                   <span className="text-xs font-normal text-muted">{nearbyLoading ? '불러오는 중…' : `${nearby.length}건`}</span>
@@ -395,8 +467,15 @@ export default function App() {
               )
             }
           >
-            {issuePanel}
-            {disclaimer}
+            {tabs}
+            {panelTab === 'chat' ? (
+              chatPanel
+            ) : (
+              <>
+                {issuePanel}
+                {disclaimer}
+              </>
+            )}
           </BottomSheet>
         )}
       </main>

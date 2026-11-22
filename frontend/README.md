@@ -7,6 +7,7 @@
 | UI-01 메인 지도 | 내 주변 이슈 마커·반경, 상단 부산 주요 이슈와 기준 위치의 날씨·미세먼지, 하단 실시간 재난문자 띠 | FR-002, FR-003, FR-007 |
 | UI-02 이슈 상세 | 상황 요약, 관련 기사 시간순 목록, 원문 링크 | FR-004, FR-005 |
 | 지도 레이어 | 오른쪽 위 🗂️ 레이어 패널에서 뉴스 이슈·위성사진·기온·바람·미세먼지를 켜고 끔 (선택은 브라우저에 기억). 기온은 지도 전체에 색으로 깔리고, 바람은 흐르는 입자 애니메이션 | FR-002, FR-007 |
+| 대화형 질의 | 오른쪽 패널(모바일은 시트)의 **💬 AI에게 물어보기** 탭. 예시 질문, 답변 속 📍지도를 누르면 그 이슈로 이동하고 '뒤로'를 누르면 대화로 돌아옴. 모바일은 지도 위 버튼으로 바로 열기 | FR-006 |
 | UI-05 위치·필터 | 내 위치(브라우저 권한) 또는 구·군·**부산 전체** 선택, 반경(기본 10km), 기간(24시간·7일·30일), 카테고리 필터 | FR-001, FR-011 |
 
 ### 모바일 (화면 너비 768px 미만)
@@ -60,9 +61,10 @@ src/
 │   ├── map/IssueMap.tsx    # 지도, 마커, 기준 위치·반경, 위성사진·날씨·바람·미세먼지 레이어
 │   ├── map/LayerControl.tsx  # 레이어 패널과 범례
 │   ├── map/windParticles.ts  # 바람 입자 애니메이션
-│   ├── panel/              # LocationControl, IssueList, IssueDetailView, 모바일 BottomSheet·LocationChip
+│   ├── panel/              # LocationControl, IssueList, IssueDetailView, ChatPanel(대화형 질의), 모바일 BottomSheet·LocationChip
 │   └── ticker/             # AlertTicker (재난문자·특보)
 ├── hooks/useMediaQuery.ts  # 데스크톱/모바일 화면 구분
+├── hooks/useChat.ts        # 대화 상태, /api/chat 호출
 ├── lib/                    # 상수(구·군 좌표, 카테고리), 날짜·거리 형식, 좌표 계산, 기온·바람 격자 보간(weatherField.ts), 화면 높이 측정(viewport.ts)
 └── types.ts                # 백엔드 응답 타입
 ```
